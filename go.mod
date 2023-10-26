@@ -5,7 +5,7 @@ go 1.21.1
 require (
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/eclipse/paho.golang v0.12.0
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.0
 	github.com/spf13/cobra v1.7.0
 	go.uber.org/zap v1.26.0

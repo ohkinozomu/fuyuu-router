@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuyuu-router-agent
+  namespace: fuyuu-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuyuu-router-agent
+  template:
+    metadata:
+      labels:
+        app: fuyuu-router-agent
+    spec:
+      containers:
+      - name: fuyuu-router-agent
+        image: ohkinozomu/fuyuu-router:206c9dbe1bcb5ef77f6e274c143f8608b00ecaeb
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /app/fuyuu-router agent --id agent01 -b nanomq.nanomq:1883 --proxy-host 127.0.0.1:4567
+      - name: sinatra-server
+        image: ruby:3.2.2
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          gem install sinatra puma --no-document && ruby -e "require 'sinatra'; set :server, 'puma'; get('/') { 'Hello, world!' }"
+        ports:
+        - containerPort: 4567

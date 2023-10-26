@@ -1,0 +1,12 @@
+name: e2e-test-tls
+on: push
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Run test
+        run: ./e2e/tls.sh

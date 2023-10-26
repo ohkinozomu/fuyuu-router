@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuyuu-router-hub
+  namespace: fuyuu-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuyuu-router-hub
+  template:
+    metadata:
+      labels:
+        app: fuyuu-router-hub
+    spec:
+      containers:
+      - name: fuyuu-router-hub
+        image: ohkinozomu/fuyuu-router:206c9dbe1bcb5ef77f6e274c143f8608b00ecaeb
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /app/fuyuu-router hub -b nanomq.nanomq:1883

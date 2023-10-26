@@ -1,0 +1,53 @@
+package agent
+
+import (
+	"context"
+
+	"github.com/eclipse/paho.golang/paho"
+	"github.com/ohkinozomu/fuyuu-router/internal/common"
+)
+
+type server struct {
+	client      *paho.Client
+	messageChan chan string
+}
+
+func newServer(c AgentConfig) server {
+	conn, err := common.TCPConnect(c.CommonConfig)
+	if err != nil {
+		c.Logger.Fatal("Error: " + err.Error())
+	}
+	messageChan := make(chan string)
+	clientConfig := paho.ClientConfig{
+		Conn:   conn,
+		Router: NewRouter(messageChan, c),
+	}
+	client := paho.NewClient(clientConfig)
+
+	return server{
+		client:      client,
+		messageChan: messageChan,
+	}
+}
+
+func Start(c AgentConfig) {
+	s := newServer(c)
+
+	_, err := s.client.Connect(context.Background(), common.MQTTConnect(c.CommonConfig))
+	if err != nil {
+		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
+	}
+
+	_, err = s.client.Subscribe(context.Background(), &paho.Subscribe{
+		Subscriptions: []paho.SubscribeOptions{
+			{
+				Topic: common.RequestTopic(c.ID),
+				QoS:   0,
+			},
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	select {}
+}

@@ -10,4 +10,5 @@ type CommonConfig struct {
 	CAFile     string
 	Cert       string
 	Key        string
+	Protocol   string
 }

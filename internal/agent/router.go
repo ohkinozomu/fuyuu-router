@@ -19,6 +19,7 @@ type Router struct {
 	id          string
 	proxyHost   string
 	logger      *zap.Logger
+	protocol    string
 }
 
 var _ paho.Router = (*Router)(nil)
@@ -44,10 +45,11 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 		id:          c.ID,
 		proxyHost:   c.ProxyHost,
 		logger:      c.Logger,
+		protocol:    c.Protocol,
 	}
 }
 
-func sendHTTPRequest(proxyHost string, data data.HTTPRequestData) (string, int, error) {
+func sendHTTP1Request(proxyHost string, data data.HTTPRequestData) (string, int, error) {
 	url := "http://" + proxyHost + data.Path
 	body := bytes.NewBufferString(data.Body)
 	req, err := http.NewRequest(data.Method, url, body)
@@ -80,24 +82,31 @@ func (r *Router) Route(p *packets.Publish) {
 		return
 	}
 
-	var responseData data.HTTPResponseData
-	httpResponse, statusCode, err := sendHTTPRequest(r.proxyHost, requestPacket.HTTPRequestData)
-	if err != nil {
-		r.logger.Error("Error sending HTTP request", zap.Error(err))
-		responseData = data.HTTPResponseData{
-			Body:       err.Error(),
-			StatusCode: http.StatusInternalServerError,
+	var responsePacket any
+
+	if r.protocol == "http1" {
+		var responseData data.HTTPResponseData
+		httpResponse, statusCode, err := sendHTTP1Request(r.proxyHost, requestPacket.HTTPRequestData)
+		if err != nil {
+			r.logger.Error("Error sending HTTP request", zap.Error(err))
+			responseData = data.HTTPResponseData{
+				Body:       err.Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+		} else {
+			responseData = data.HTTPResponseData{
+				Body:       httpResponse,
+				StatusCode: statusCode,
+			}
+		}
+
+		responsePacket = data.HTTPResponsePacket{
+			RequestID:        requestPacket.RequestID,
+			HTTPResponseData: responseData,
 		}
 	} else {
-		responseData = data.HTTPResponseData{
-			Body:       httpResponse,
-			StatusCode: statusCode,
-		}
-	}
-
-	responsePacket := data.HTTPResponsePacket{
-		RequestID:        requestPacket.RequestID,
-		HTTPResponseData: responseData,
+		r.logger.Error("Unknown protocol: " + r.protocol)
+		return
 	}
 
 	responseTopic := common.ResponseTopic(r.id, requestPacket.RequestID)

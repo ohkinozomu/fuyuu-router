@@ -17,6 +17,7 @@ func init() {
 	hubCmd.Flags().StringVarP(&caFile, "cafile", "", "", "CA file")
 	hubCmd.Flags().StringVarP(&cert, "cert", "", "", "cert file")
 	hubCmd.Flags().StringVarP(&key, "key", "", "", "key file")
+	hubCmd.Flags().StringVarP(&protocol, "protocol", "", "http1", "Currently only \"http1\" is supported")
 }
 
 var hubCmd = &cobra.Command{
@@ -68,6 +69,7 @@ var hubCmd = &cobra.Command{
 				CAFile:     caFile,
 				Cert:       cert,
 				Key:        key,
+				Protocol:   protocol,
 			},
 		}
 		hub.Start(c)

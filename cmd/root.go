@@ -17,6 +17,7 @@ var (
 	caFile     string
 	cert       string
 	key        string
+	protocol   string
 )
 
 func Execute() error {

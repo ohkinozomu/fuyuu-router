@@ -22,6 +22,7 @@ func init() {
 	agentCmd.Flags().StringVarP(&caFile, "cafile", "", "", "CA file")
 	agentCmd.Flags().StringVarP(&cert, "cert", "", "", "cert file")
 	agentCmd.Flags().StringVarP(&key, "key", "", "", "key file")
+	agentCmd.Flags().StringVarP(&protocol, "protocol", "", "http1", "Currently only \"http1\" is supported")
 }
 
 var agentCmd = &cobra.Command{
@@ -75,6 +76,7 @@ var agentCmd = &cobra.Command{
 				CAFile:     caFile,
 				Cert:       cert,
 				Key:        key,
+				Protocol:   protocol,
 			},
 		}
 		agent.Start(c)

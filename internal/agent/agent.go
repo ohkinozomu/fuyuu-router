@@ -31,6 +31,10 @@ func newServer(c AgentConfig) server {
 }
 
 func Start(c AgentConfig) {
+	if c.Protocol != "http1" {
+		panic("Unknown protocol: " + c.Protocol)
+	}
+
 	s := newServer(c)
 
 	_, err := s.client.Connect(context.Background(), common.MQTTConnect(c.CommonConfig))

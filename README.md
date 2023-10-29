@@ -7,13 +7,13 @@ Multi-cloud HTTP communication using MQTT
 ### hub
 
 ```bash
-fuyuu-router hub -b localhost:1883
+fuyuu-router hub -b BROKER-IP:1883
 ```
 
 ### agent
 
 ```bash
-fuyuu-router agent --id agent01 -b localhost:1883 --proxy-host PROXY-HOST-IP
+fuyuu-router agent --id agent01 -b BROKER-IP:1883 --proxy-host PROXY-HOST-IP
 ```
 
 ### HTTP request

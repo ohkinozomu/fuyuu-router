@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -202,18 +204,32 @@ func (s *server) startHTTP1(c HubConfig) {
 		http.MethodConnect,
 		http.MethodTrace,
 	)
-	http.Handle("/", r)
+
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
+	}
+
+	go func() {
+		c.Logger.Info("Starting server...")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("ListenAndServe error: %v", err)
+		}
+	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-stop
-		c.Logger.Info("Gracefully shutting down...")
-		s.requestClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
-		s.responseClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
-		s.db.Close()
-		os.Exit(0)
-	}()
+	<-stop
+	c.Logger.Info("Gracefully shutting down...")
 
-	http.ListenAndServe(":8080", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	s.requestClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
+	s.responseClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
+	s.db.Close()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		c.Logger.Fatal(fmt.Sprintf("shutting down error: %v", err))
+	}
 }

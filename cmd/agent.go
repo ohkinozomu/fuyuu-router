@@ -65,6 +65,10 @@ var agentCmd = &cobra.Command{
 			panic(err)
 		}
 
+		if id == "" {
+			logger.Fatal("ID is required")
+		}
+
 		c := agent.AgentConfig{
 			ID:        id,
 			ProxyHost: proxyHost,

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
@@ -25,7 +26,9 @@ type Router struct {
 var _ paho.Router = (*Router)(nil)
 
 func NewRouter(messageChan chan string, c AgentConfig) *Router {
-	conn, err := common.TCPConnect(c.CommonConfig)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	conn, err := common.TCPConnect(ctx, c.CommonConfig)
 	if err != nil {
 		c.Logger.Fatal("Error: " + err.Error())
 	}

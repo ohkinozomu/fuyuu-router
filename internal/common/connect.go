@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -25,7 +26,7 @@ func MQTTConnect(c CommonConfig) *paho.Connect {
 	}
 }
 
-func TCPConnect(c CommonConfig) (net.Conn, error) {
+func TCPConnect(ctx context.Context, c CommonConfig) (net.Conn, error) {
 	if c.CAFile != "" {
 		caCert, err := os.ReadFile(c.CAFile)
 		if err != nil {
@@ -49,13 +50,16 @@ func TCPConnect(c CommonConfig) (net.Conn, error) {
 			conf.Certificates = []tls.Certificate{cert}
 		}
 
-		conn, err := tls.Dial("tcp", c.MQTTBroker, &conf)
+		dialer := &net.Dialer{}
+		conn, err := tls.DialWithDialer(dialer, "tcp", c.MQTTBroker, &conf)
 		if err != nil {
 			return nil, err
 		}
 		return conn, nil
 	}
-	conn, err := net.Dial("tcp", c.MQTTBroker)
+
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "tcp", c.MQTTBroker)
 	if err != nil {
 		return nil, err
 	}

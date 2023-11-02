@@ -36,8 +36,10 @@ func newServer(c HubConfig) server {
 		c.Logger.Fatal("Error opening database: " + err.Error())
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 	c.Logger.Debug("Connecting to MQTT broker...")
-	responseConn, err := common.TCPConnect(c.CommonConfig)
+	responseConn, err := common.TCPConnect(ctx, c.CommonConfig)
 	if err != nil {
 		c.Logger.Fatal("Error: " + err.Error())
 	}
@@ -47,8 +49,10 @@ func newServer(c HubConfig) server {
 	}
 	responseClient := paho.NewClient(responseClientConfig)
 
+	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 	c.Logger.Debug("Connecting to MQTT broker...")
-	requestConn, err := common.TCPConnect(c.CommonConfig)
+	requestConn, err := common.TCPConnect(ctx, c.CommonConfig)
 	if err != nil {
 		c.Logger.Fatal("Error: " + err.Error())
 	}
@@ -172,14 +176,20 @@ func Start(c HubConfig) {
 
 	connect := common.MQTTConnect(c.CommonConfig)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	s.logger.Debug("Connecting to MQTT broker...")
-	_, err := s.requestClient.Connect(context.Background(), connect)
+	_, err := s.requestClient.Connect(ctx, connect)
 	if err != nil {
 		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
 	}
 
+	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	s.logger.Debug("Connecting to MQTT broker...")
-	_, err = s.responseClient.Connect(context.Background(), connect)
+	_, err = s.responseClient.Connect(ctx, connect)
 	if err != nil {
 		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
 	}

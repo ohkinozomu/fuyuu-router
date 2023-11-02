@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
@@ -13,7 +14,9 @@ type server struct {
 }
 
 func newServer(c AgentConfig) server {
-	conn, err := common.TCPConnect(c.CommonConfig)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	conn, err := common.TCPConnect(ctx, c.CommonConfig)
 	if err != nil {
 		c.Logger.Fatal("Error: " + err.Error())
 	}

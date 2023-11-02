@@ -31,7 +31,7 @@ type server struct {
 
 func newServer(c HubConfig) server {
 	c.Logger.Debug("Opening database...")
-	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true))
+	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true).WithLogger(newZapToBadgerAdapter(c.Logger)))
 	if err != nil {
 		c.Logger.Fatal("Error opening database: " + err.Error())
 	}

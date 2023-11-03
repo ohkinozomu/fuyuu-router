@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuyuu-router-agent
+  namespace: fuyuu-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuyuu-router-agent
+  template:
+    metadata:
+      labels:
+        app: fuyuu-router-agent
+    spec:
+      containers:
+      - name: fuyuu-router-agent
+        image: fuyuu-router:dev
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /app/fuyuu-router agent --id agent01 -b nanomq.nanomq:1883 --proxy-host 127.0.0.1:8000 --loglevel debug --username admin --password adminpassword
+      - name: appserver
+        image: golang:1.21.3
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo 'package main; import ("net/http"; "fmt"); func main() { http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, "Hello, world!") }); http.ListenAndServe(":8000", nil) }' > server.go && go run server.go
+        ports:
+        - containerPort: 8000
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 5

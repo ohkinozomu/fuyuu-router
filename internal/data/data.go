@@ -23,3 +23,11 @@ type HTTPResponsePacket struct {
 	RequestID        string           `json:"request_id"`
 	HTTPResponseData HTTPResponseData `json:"http_response_data"`
 }
+
+type LaunchPacket struct {
+	AgentID string `json:"agent_id"`
+}
+
+type TerminatePacket struct {
+	AgentID string `json:"agent_id"`
+}

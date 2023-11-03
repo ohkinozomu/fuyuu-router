@@ -52,7 +52,7 @@ delete_cluster() {
 
 create_cluster
 build_and_load_image
-source "$1"
+kubectl apply -f "$1"
 wait_pods
 run_test
 delete_cluster

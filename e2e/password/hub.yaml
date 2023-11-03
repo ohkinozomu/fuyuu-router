@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuyuu-router-hub
+  namespace: fuyuu-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuyuu-router-hub
+  template:
+    metadata:
+      labels:
+        app: fuyuu-router-hub
+    spec:
+      containers:
+      - name: fuyuu-router-hub
+        image: fuyuu-router:dev
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /app/fuyuu-router hub -b nanomq.nanomq:1883 --username admin --password adminpassword
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuyuu-router-hub
+  namespace: fuyuu-router
+spec:
+  selector:
+    app: fuyuu-router-hub
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: NodePort

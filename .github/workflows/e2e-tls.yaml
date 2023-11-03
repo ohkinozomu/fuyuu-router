@@ -9,4 +9,4 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Run test
-        run: ./e2e/tls.sh
+        run: ./e2e/common.sh ./e2e/tls.sh

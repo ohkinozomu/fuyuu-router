@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: fuyuu-router-hub
-        image: ohkinozomu/fuyuu-router:cf4df8eb7bb2d90fa3d7fff685265285a6885ec7
+        image: ohkinozomu/fuyuu-router:6932d5a4388f2080d7d1e20b6ffb9fe24e1c4303
         command: ["/bin/sh", "-c"]
         args:
         - |

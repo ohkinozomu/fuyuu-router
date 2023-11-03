@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
+	"github.com/ohkinozomu/fuyuu-router/internal/data"
 )
 
 type server struct {
@@ -35,14 +37,45 @@ func newServer(c AgentConfig) server {
 
 func Start(c AgentConfig) {
 	if c.Protocol != "http1" {
-		panic("Unknown protocol: " + c.Protocol)
+		c.Logger.Fatal("Unknown protocol: " + c.Protocol)
 	}
 
 	s := newServer(c)
-
-	_, err := s.client.Connect(context.Background(), common.MQTTConnect(c.CommonConfig))
+	connect := common.MQTTConnect(c.CommonConfig)
+	teminatePacket := data.TerminatePacket{
+		AgentID: c.ID,
+	}
+	terminatePayload, err := json.Marshal(teminatePacket)
+	if err != nil {
+		c.Logger.Fatal(err.Error())
+	}
+	connect.WillMessage = &paho.WillMessage{
+		Retain:  false,
+		QoS:     0,
+		Topic:   common.TerminateTopic(),
+		Payload: terminatePayload,
+	}
+	_, err = s.client.Connect(context.Background(), connect)
 	if err != nil {
 		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
+	}
+
+	launchPacket := data.LaunchPacket{
+		AgentID: c.ID,
+	}
+	launchPayload, err := json.Marshal(launchPacket)
+	if err != nil {
+		c.Logger.Fatal(err.Error())
+	}
+
+	_, err = s.client.Publish(context.Background(), &paho.Publish{
+		Topic: common.LaunchTopic(),
+		// Maybe it should be 1.
+		QoS:     0,
+		Payload: launchPayload,
+	})
+	if err != nil {
+		c.Logger.Error(err.Error())
 	}
 
 	_, err = s.client.Subscribe(context.Background(), &paho.Subscribe{
@@ -54,7 +87,7 @@ func Start(c AgentConfig) {
 		},
 	})
 	if err != nil {
-		panic(err)
+		c.Logger.Fatal(err.Error())
 	}
 	select {}
 }

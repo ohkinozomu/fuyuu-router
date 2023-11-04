@@ -10,6 +10,7 @@ import (
 
 var id string
 var proxyHost string
+var label string
 
 func init() {
 	rootCmd.AddCommand(agentCmd)
@@ -23,6 +24,7 @@ func init() {
 	agentCmd.Flags().StringVarP(&cert, "cert", "", "", "cert file")
 	agentCmd.Flags().StringVarP(&key, "key", "", "", "key file")
 	agentCmd.Flags().StringVarP(&protocol, "protocol", "", "http1", "Currently only \"http1\" is supported")
+	agentCmd.Flags().StringVarP(&label, "label", "", "", "Label of this agent")
 }
 
 var agentCmd = &cobra.Command{
@@ -72,6 +74,7 @@ var agentCmd = &cobra.Command{
 		c := agent.AgentConfig{
 			ID:        id,
 			ProxyHost: proxyHost,
+			Label:     label,
 			CommonConfig: common.CommonConfig{
 				MQTTBroker: mqttBroker,
 				Username:   username,

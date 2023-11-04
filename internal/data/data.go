@@ -26,8 +26,10 @@ type HTTPResponsePacket struct {
 
 type LaunchPacket struct {
 	AgentID string `json:"agent_id"`
+	Label   string `json:"label"`
 }
 
 type TerminatePacket struct {
 	AgentID string `json:"agent_id"`
+	Label   string `json:"label"`
 }

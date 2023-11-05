@@ -7,7 +7,8 @@ import (
 
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
-	"github.com/ohkinozomu/fuyuu-router/internal/data"
+	"github.com/ohkinozomu/fuyuu-router/pkg/data"
+	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 )
 
 type server struct {
@@ -53,7 +54,7 @@ func Start(c AgentConfig) {
 	connect.WillMessage = &paho.WillMessage{
 		Retain:  false,
 		QoS:     0,
-		Topic:   common.TerminateTopic(),
+		Topic:   topics.TerminateTopic(),
 		Payload: terminatePayload,
 	}
 	_, err = s.client.Connect(context.Background(), connect)
@@ -71,7 +72,7 @@ func Start(c AgentConfig) {
 	}
 
 	_, err = s.client.Publish(context.Background(), &paho.Publish{
-		Topic: common.LaunchTopic(),
+		Topic: topics.LaunchTopic(),
 		// Maybe it should be 1.
 		QoS:     0,
 		Payload: launchPayload,
@@ -83,7 +84,7 @@ func Start(c AgentConfig) {
 	_, err = s.client.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: []paho.SubscribeOptions{
 			{
-				Topic: common.RequestTopic(c.ID),
+				Topic: topics.RequestTopic(c.ID),
 				QoS:   0,
 			},
 		},

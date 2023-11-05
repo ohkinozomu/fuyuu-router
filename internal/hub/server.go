@@ -20,7 +20,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
-	"github.com/ohkinozomu/fuyuu-router/internal/data"
+	"github.com/ohkinozomu/fuyuu-router/pkg/data"
+	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"go.uber.org/zap"
 )
 
@@ -93,7 +94,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	uuid := uuid.New().String()
-	topic := common.ResponseTopic(agentID, uuid)
+	topic := topics.ResponseTopic(agentID, uuid)
 
 	s.logger.Debug("Subscribing to response topic...")
 	_, err := s.responseClient.Subscribe(ctx, &paho.Subscribe{
@@ -147,7 +148,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	requestTopic := common.RequestTopic(agentID)
+	requestTopic := topics.RequestTopic(agentID)
 	s.logger.Debug("Publishing request...")
 	s.requestClient.Publish(context.Background(), &paho.Publish{
 		Payload: jsonData,

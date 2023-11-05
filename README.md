@@ -32,6 +32,14 @@ When multiple IDs are passed to FuyuuRouter-IDs separated by commas, fuyuu-route
 
 The current load balancing algorithm is random only.
 
+## About service discovery
+
+fuyuu-router doesn't perform any service discovery. 
+
+Agents publish a message to the `fuyuu-router/launch` topic when they launch and to the `fuyuu-router/terminate` topic when they disconnect. 
+
+Users can subscribe to these topics to create a mechanism, for example, to update Istio VirtualServices.
+
 ## limitation
 
 - Currently only HTTP 1.1 is supported. Perhaps HTTP2 is the next roadmap.

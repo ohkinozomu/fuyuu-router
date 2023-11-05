@@ -7,7 +7,7 @@ import (
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
-	"github.com/ohkinozomu/fuyuu-router/internal/data"
+	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"go.uber.org/zap"
 )
 

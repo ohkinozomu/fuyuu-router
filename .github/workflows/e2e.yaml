@@ -8,5 +8,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '^1.21.1'
       - name: Run test
-        run: ./e2e/common.sh --manifest_dir=./e2e/basic/manifests
+        run: ./e2e/common.sh --manifest_dir=./e2e/basic/manifests  --run_test=./e2e/basic/run_test.sh

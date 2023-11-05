@@ -25,11 +25,11 @@ type HTTPResponsePacket struct {
 }
 
 type LaunchPacket struct {
-	AgentID string `json:"agent_id"`
-	Label   string `json:"label"`
+	AgentID string            `json:"agent_id"`
+	Labels  map[string]string `json:"labels"`
 }
 
 type TerminatePacket struct {
-	AgentID string `json:"agent_id"`
-	Label   string `json:"label"`
+	AgentID string            `json:"agent_id"`
+	Labels  map[string]string `json:"labels"`
 }

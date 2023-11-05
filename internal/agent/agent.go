@@ -44,7 +44,7 @@ func Start(c AgentConfig) {
 	connect := common.MQTTConnect(c.CommonConfig)
 	teminatePacket := data.TerminatePacket{
 		AgentID: c.ID,
-		Label:   c.Label,
+		Labels:  c.Labels,
 	}
 	terminatePayload, err := json.Marshal(teminatePacket)
 	if err != nil {
@@ -63,7 +63,7 @@ func Start(c AgentConfig) {
 
 	launchPacket := data.LaunchPacket{
 		AgentID: c.ID,
-		Label:   c.Label,
+		Labels:  c.Labels,
 	}
 	launchPayload, err := json.Marshal(launchPacket)
 	if err != nil {

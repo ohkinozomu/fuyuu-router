@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/ohkinozomu/fuyuu-router/internal/agent"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/spf13/cobra"
@@ -10,7 +12,7 @@ import (
 
 var id string
 var proxyHost string
-var label string
+var labels []string
 
 func init() {
 	rootCmd.AddCommand(agentCmd)
@@ -24,7 +26,7 @@ func init() {
 	agentCmd.Flags().StringVarP(&cert, "cert", "", "", "cert file")
 	agentCmd.Flags().StringVarP(&key, "key", "", "", "key file")
 	agentCmd.Flags().StringVarP(&protocol, "protocol", "", "http1", "Currently only \"http1\" is supported")
-	agentCmd.Flags().StringVarP(&label, "label", "", "", "Label of this agent")
+	agentCmd.Flags().StringArrayVar(&labels, "labels", []string{}, "Assign labels to the agent (e.g., --labels key1=value1,key2=value2)")
 }
 
 var agentCmd = &cobra.Command{
@@ -71,10 +73,20 @@ var agentCmd = &cobra.Command{
 			logger.Fatal("ID is required")
 		}
 
+		labelMap := make(map[string]string)
+		for _, label := range labels {
+			parts := strings.SplitN(label, "=", 2)
+			if len(parts) == 2 {
+				labelMap[parts[0]] = parts[1]
+			} else {
+				logger.Fatal("Invalid label format")
+			}
+		}
+
 		c := agent.AgentConfig{
 			ID:        id,
 			ProxyHost: proxyHost,
-			Label:     label,
+			Labels:    labelMap,
 			CommonConfig: common.CommonConfig{
 				MQTTBroker: mqttBroker,
 				Username:   username,

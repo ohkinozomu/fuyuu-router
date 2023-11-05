@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -137,7 +136,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Method:  r.Method,
 		Path:    r.URL.Path,
 		Headers: r.Header,
-		Body:    base64.StdEncoding.EncodeToString(bodyBytes),
+		Body:    string(bodyBytes),
 	}
 	requestPacket := data.HTTPRequestPacket{
 		RequestID:       uuid,

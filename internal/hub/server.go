@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -71,11 +73,15 @@ func newServer(c HubConfig) server {
 
 func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.logger.Debug("Handling request...")
-	agentID := r.Header.Get("FuyuuRouter-ID")
-	if agentID == "" {
-		w.Write([]byte("FuyuuRouter-ID header is required"))
+	fuyuuRouterIDs := r.Header.Get("FuyuuRouter-IDs")
+	agentIDs := strings.Split(fuyuuRouterIDs, ",")
+	if len(agentIDs) == 0 {
+		w.Write([]byte("FuyuuRouter-IDs header is required"))
 		return
 	}
+	// Load Balancing
+	// Now, select randomly
+	agentID := agentIDs[rand.Intn(len(agentIDs))]
 
 	timeoutDuration := 30 * time.Second
 	ctx, cancel := context.WithTimeout(r.Context(), timeoutDuration)

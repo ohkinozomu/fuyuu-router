@@ -10,7 +10,8 @@ import (
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
-	"github.com/ohkinozomu/fuyuu-router/internal/data"
+	"github.com/ohkinozomu/fuyuu-router/pkg/data"
+	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"go.uber.org/zap"
 )
 
@@ -112,7 +113,7 @@ func (r *Router) Route(p *packets.Publish) {
 		return
 	}
 
-	responseTopic := common.ResponseTopic(r.id, requestPacket.RequestID)
+	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestID)
 	responsePayload, err := json.Marshal(responsePacket)
 	if err != nil {
 		r.logger.Error("Error marshalling response data", zap.Error(err))

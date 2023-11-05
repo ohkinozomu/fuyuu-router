@@ -1,4 +1,4 @@
-package common
+package topics
 
 import "fmt"
 

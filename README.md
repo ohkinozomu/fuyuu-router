@@ -19,12 +19,18 @@ fuyuu-router agent --id agent01 -b BROKER-IP:1883 --proxy-host PROXY-HOST-IP
 ### HTTP request
 
 ```
-curl http://FUYUU-ROUTER-HUB-IP:8080/ -H "FuyuuRouter-ID: agent01"
+curl http://FUYUU-ROUTER-HUB-IP:8080/ -H "FuyuuRouter-IDs: agent01"
 ```
 
 This request follows the path below:
 
 `fuyuu-router hub -> MQTT broker -> fuyuu-router agent -> proxy host`
+
+## Load balancing
+
+When multiple IDs are passed to FuyuuRouter-IDs separated by commas, fuyuu-router performs load balancing between those IDs.
+
+The current load balancing algorithm is random only.
 
 ## limitation
 

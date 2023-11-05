@@ -1,0 +1,14 @@
+# This script inexplicably terminates when running on GitHub Actions.
+#
+# name: e2e-test-loadbalancing
+# on: push
+# jobs:
+#   test:
+#     name: test
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 10
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#       - name: Run test
+#         run: ./e2e/common.sh --manifest_dir=./e2e/loadbalancing/manifests --wait_script=./e2e/loadbalancing/wait.sh --run_test=./e2e/loadbalancing/run_test.sh

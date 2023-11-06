@@ -19,16 +19,21 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router hub -b nanomq.nanomq:8883 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
+          /app/fuyuu-router hub -c /app/config/config.toml -b nanomq.nanomq:8883 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
         ports:
         - containerPort: 8080
         volumeMounts:
+        - name: fuyuu-router-hub-config
+          mountPath: /app/config
         - name: certs-volume
           mountPath: /etc/certs
       volumes:
       - name: certs-volume
         configMap:
           name: fuyuu-router-certs
+      - name: fuyuu-router-hub-config
+        configMap:
+          name: fuyuu-router-hub-config
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -125,3 +130,12 @@ spec:
       port: 8080
       targetPort: 8080
   type: NodePort
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuyuu-router-hub-config
+  namespace: fuyuu-router
+data:
+  config.toml: |
+    # TODO

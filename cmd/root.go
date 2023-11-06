@@ -18,6 +18,7 @@ var (
 	cert       string
 	key        string
 	protocol   string
+	configPath string
 )
 
 func Execute() error {

@@ -7,4 +7,5 @@ type AgentConfig struct {
 	ProxyHost string
 	Labels    map[string]string
 	common.CommonConfig
+	common.CommonConfigV2
 }

@@ -12,3 +12,10 @@ type CommonConfig struct {
 	Key        string
 	Protocol   string
 }
+
+type CommonConfigV2 struct {
+	Profiling struct {
+		Registry string
+		Server   string
+	}
+}

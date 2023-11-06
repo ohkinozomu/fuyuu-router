@@ -16,7 +16,23 @@ spec:
       containers:
       - name: fuyuu-router-hub
         image: ohkinozomu/fuyuu-router:6932d5a4388f2080d7d1e20b6ffb9fe24e1c4303
+        volumeMounts:
+        - name: fuyuu-router-hub-config
+          mountPath: /app/config
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router hub -b nanomq.nanomq:1883
+          /app/fuyuu-router hub -c /app/config/config.toml -b nanomq.nanomq:1883
+      volumes:
+      - name: fuyuu-router-hub-config
+        configMap:
+          name: fuyuu-router-hub-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuyuu-router-config
+  namespace: fuyuu-router
+data:
+  config.toml: |
+    # TODO

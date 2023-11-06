@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"context"
+	"log"
 	"strings"
 
 	"github.com/ohkinozomu/fuyuu-router/internal/agent"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
+	ncp "github.com/ohkinozomu/neutral-cp"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -27,6 +31,7 @@ func init() {
 	agentCmd.Flags().StringVarP(&key, "key", "", "", "key file")
 	agentCmd.Flags().StringVarP(&protocol, "protocol", "", "http1", "Currently only \"http1\" is supported")
 	agentCmd.Flags().StringArrayVar(&labels, "labels", []string{}, "Assign labels to the agent (e.g., --labels key1=value1,key2=value2)")
+	agentCmd.Flags().StringVarP(&configPath, "config", "c", "", "config file path")
 }
 
 var agentCmd = &cobra.Command{
@@ -56,7 +61,7 @@ var agentCmd = &cobra.Command{
 		encoderConfig := zap.NewProductionEncoderConfig()
 		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
-		config := zap.Config{
+		loggerConfig := zap.Config{
 			Level:            atomicLevel,
 			Encoding:         "json",
 			EncoderConfig:    encoderConfig,
@@ -64,9 +69,46 @@ var agentCmd = &cobra.Command{
 			ErrorOutputPaths: []string{"stderr"},
 		}
 
-		logger, err := config.Build()
+		logger, err := loggerConfig.Build()
 		if err != nil {
 			panic(err)
+		}
+
+		viper.SetConfigFile(configPath)
+
+		if err := viper.ReadInConfig(); err != nil {
+			logger.Fatal(err.Error())
+		}
+
+		var config common.CommonConfigV2
+		err = viper.Unmarshal(&config)
+		if err != nil {
+			log.Fatalf(err.Error())
+		}
+
+		if config.Profiling.Registry != "" {
+			logger.Info("profiling enabled")
+			go func() {
+				var registry ncp.Registry
+				if config.Profiling.Registry == "cloudprofiler" {
+					registry = ncp.CLOUD_PROFILER
+				} else if config.Profiling.Registry == "pyroscope" {
+					registry = ncp.PYROSCOPE
+				} else {
+					logger.Fatal("Unknown profiling registry")
+				}
+				c := ncp.Config{
+					Registry:        registry,
+					ApplicationName: "fuyuu-router-agent",
+				}
+				ncp := ncp.NeutralCP{Config: c}
+
+				ctx := context.Background()
+				err := ncp.Start(ctx)
+				if err != nil {
+					logger.Fatal(err.Error())
+				}
+			}()
 		}
 
 		if id == "" {
@@ -97,6 +139,7 @@ var agentCmd = &cobra.Command{
 				Key:        key,
 				Protocol:   protocol,
 			},
+			CommonConfigV2: config,
 		}
 		agent.Start(c)
 		return nil

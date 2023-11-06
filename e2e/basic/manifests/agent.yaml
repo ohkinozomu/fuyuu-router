@@ -47,10 +47,13 @@ spec:
       containers:
       - name: fuyuu-router-agent
         image: fuyuu-router:dev
+        volumeMounts:
+        - name: fuyuu-router-agent-config
+          mountPath: /app/config
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router agent --id agent01 -b nanomq.nanomq:1883 --proxy-host 127.0.0.1:8000 --loglevel debug
+          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b nanomq.nanomq:1883 --proxy-host 127.0.0.1:8000 --loglevel debug
       - name: appserver
         image: golang:1.21.3
         volumeMounts:
@@ -78,3 +81,15 @@ spec:
       - name: config-volume
         configMap:
           name: appserver-config
+      - name: fuyuu-router-agent-config
+        configMap:
+          name: fuyuu-router-agent-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuyuu-router-agent-config
+  namespace: fuyuu-router
+data:
+  config.toml: |
+    # TODO

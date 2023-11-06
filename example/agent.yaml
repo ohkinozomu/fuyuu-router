@@ -16,10 +16,13 @@ spec:
       containers:
       - name: fuyuu-router-agent
         image: ohkinozomu/fuyuu-router:6932d5a4388f2080d7d1e20b6ffb9fe24e1c4303
+        volumeMounts:
+        - name: fuyuu-router-agent-config
+          mountPath: /app/config
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router agent --id agent01 -b nanomq.nanomq:1883 --proxy-host 127.0.0.1:4567
+          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b nanomq.nanomq:1883 --proxy-host 127.0.0.1:4567
       - name: sinatra-server
         image: ruby:3.2.2
         command: ["/bin/sh", "-c"]
@@ -28,3 +31,16 @@ spec:
           gem install sinatra puma --no-document && ruby -e "require 'sinatra'; set :server, 'puma'; get('/') { 'Hello, world!' }"
         ports:
         - containerPort: 4567
+      volumes:
+      - name: fuyuu-router-agent-config
+        configMap:
+          name: fuyuu-router-agent-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuyuu-router-agent-config
+  namespace: fuyuu-router
+data:
+  config.toml: |
+    # TODO

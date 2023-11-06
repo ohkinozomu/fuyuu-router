@@ -19,10 +19,12 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router agent --id agent01 -b nanomq.nanomq:8883 --proxy-host 127.0.0.1:8000 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
+          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b nanomq.nanomq:8883 --proxy-host 127.0.0.1:8000 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
         volumeMounts:
         - name: certs-volume
           mountPath: /etc/certs
+        - name: fuyuu-router-agent-config
+          mountPath: /app/config
       - name: appserver
         image: golang:1.21.3
         command: ["/bin/sh", "-c"]
@@ -47,3 +49,15 @@ spec:
       - name: certs-volume
         configMap:
           name: fuyuu-router-certs
+      - name: fuyuu-router-agent-config
+        configMap:
+          name: fuyuu-router-agent-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuyuu-router-agent-config
+  namespace: fuyuu-router
+data:
+  config.toml: |
+    # TODO

@@ -31,8 +31,10 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: fuyuu-router-config
+  name: fuyuu-router-hub-config
   namespace: fuyuu-router
 data:
   config.toml: |
-    # TODO
+    [profiling]
+    registry = "pyroscope"
+    server_address = "pyroscope.pyroscope:4040"

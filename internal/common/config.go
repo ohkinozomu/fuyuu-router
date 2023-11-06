@@ -15,7 +15,7 @@ type CommonConfig struct {
 
 type CommonConfigV2 struct {
 	Profiling struct {
-		Registry string
-		Server   string
+		Registry      string `mapstructure:"registry"`
+		ServerAddress string `mapstructure:"server_address"`
 	}
 }

@@ -135,13 +135,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	bodyBytes := make([]byte, r.ContentLength)
 	r.Body.Read(bodyBytes)
 
-	headers := make(map[string]*data.HeaderValueList)
-	for k, v := range r.Header {
-		headers[k] = &data.HeaderValueList{Values: v}
-	}
-	dataHeaders := data.HTTPHeaders{
-		Headers: headers,
-	}
+	dataHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
 
 	requestData := data.HTTPRequestData{
 		Method:  r.Method,

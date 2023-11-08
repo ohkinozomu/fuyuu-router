@@ -27,6 +27,7 @@ message HTTPRequestPacket {
 message HTTPResponseData {
     string body = 1;
     int32 status_code = 2;
+    HTTPHeaders headers = 3;
 }
 
 message HTTPResponsePacket {

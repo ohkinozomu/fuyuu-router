@@ -22,6 +22,7 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 type server struct {
@@ -29,6 +30,7 @@ type server struct {
 	responseClient *paho.Client
 	db             *badger.DB
 	logger         *zap.Logger
+	format         string
 }
 
 func newServer(c HubConfig) server {
@@ -47,7 +49,7 @@ func newServer(c HubConfig) server {
 	}
 	responseClientConfig := paho.ClientConfig{
 		Conn:   responseConn,
-		Router: NewRouter(db, c.Logger),
+		Router: NewRouter(db, c.Logger, c.CommonConfigV2.Networking.Format),
 	}
 	responseClient := paho.NewClient(responseClientConfig)
 
@@ -68,6 +70,7 @@ func newServer(c HubConfig) server {
 		responseClient: responseClient,
 		db:             db,
 		logger:         c.Logger,
+		format:         c.CommonConfigV2.Networking.Format,
 	}
 }
 
@@ -151,14 +154,27 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		HttpRequestData: &requestData,
 	}
 
-	jsonData, err := json.Marshal(&requestPacket)
-	if err != nil {
-		panic(err)
+	var requestPayload []byte
+	if s.format == "json" {
+		requestPayload, err = json.Marshal(&requestPacket)
+		if err != nil {
+			s.logger.Info(err.Error())
+			return
+		}
+	} else if s.format == "protobuf" {
+		requestPayload, err = proto.Marshal(&requestPacket)
+		if err != nil {
+			s.logger.Info(err.Error())
+			return
+		}
+	} else {
+		s.logger.Info("Unknown format: " + s.format)
+		return
 	}
 	requestTopic := topics.RequestTopic(agentID)
 	s.logger.Debug("Publishing request...")
 	s.requestClient.Publish(context.Background(), &paho.Publish{
-		Payload: jsonData,
+		Payload: requestPayload,
 		Topic:   requestTopic,
 	})
 
@@ -166,11 +182,21 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	case value := <-dataCh:
 		s.logger.Debug("Writing response...")
 		var httpResponseData data.HTTPResponseData
-		err := json.Unmarshal(value, &httpResponseData)
-		if err != nil {
-			s.logger.Info("Error unmarshalling response data: " + err.Error())
+		if s.format == "json" {
+			if err := json.Unmarshal(value, &httpResponseData); err != nil {
+				s.logger.Error("Error unmarshalling message", zap.Error(err))
+				return
+			}
+		} else if s.format == "protobuf" {
+			if err := proto.Unmarshal(value, &httpResponseData); err != nil {
+				s.logger.Error("Error unmarshalling message", zap.Error(err))
+				return
+			}
+		} else {
+			s.logger.Error("Unknown format: " + s.format)
 			return
 		}
+
 		if value != nil {
 			w.WriteHeader(int(httpResponseData.StatusCode))
 			w.Write([]byte(httpResponseData.Body))

@@ -9,6 +9,7 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
+	"google.golang.org/protobuf/proto"
 )
 
 type server struct {
@@ -48,7 +49,21 @@ func Start(c AgentConfig) {
 		Labels:  c.Labels,
 	}
 
-	terminatePayload, err := json.Marshal(&teminatePacket)
+	var terminatePayload []byte
+	var err error
+	if c.CommonConfigV2.Networking.Format == "json" {
+		terminatePayload, err = json.Marshal(&teminatePacket)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	} else if c.CommonConfigV2.Networking.Format == "protobuf" {
+		terminatePayload, err = proto.Marshal(&teminatePacket)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	} else {
+		c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
+	}
 	if err != nil {
 		c.Logger.Fatal(err.Error())
 	}
@@ -68,9 +83,20 @@ func Start(c AgentConfig) {
 		AgentId: c.ID,
 		Labels:  c.Labels,
 	}
-	launchPayload, err := json.Marshal(&launchPacket)
-	if err != nil {
-		c.Logger.Fatal(err.Error())
+
+	var launchPayload []byte
+	if c.CommonConfigV2.Networking.Format == "json" {
+		launchPayload, err = json.Marshal(&launchPacket)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	} else if c.CommonConfigV2.Networking.Format == "protobuf" {
+		launchPayload, err = proto.Marshal(&launchPacket)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	} else {
+		c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
 	}
 
 	_, err = s.client.Publish(context.Background(), &paho.Publish{

@@ -13,6 +13,7 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 type Router struct {
@@ -22,6 +23,7 @@ type Router struct {
 	proxyHost   string
 	logger      *zap.Logger
 	protocol    string
+	format      string
 }
 
 var _ paho.Router = (*Router)(nil)
@@ -50,6 +52,7 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 		proxyHost:   c.ProxyHost,
 		logger:      c.Logger,
 		protocol:    c.Protocol,
+		format:      c.CommonConfigV2.Networking.Format,
 	}
 }
 
@@ -81,12 +84,23 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 
 func (r *Router) Route(p *packets.Publish) {
 	requestPacket := data.HTTPRequestPacket{}
-	if err := json.Unmarshal(p.Payload, &requestPacket); err != nil {
-		r.logger.Error("Error unmarshalling message", zap.Error(err))
+
+	if r.format == "json" {
+		if err := json.Unmarshal(p.Payload, &requestPacket); err != nil {
+			r.logger.Error("Error unmarshalling message", zap.Error(err))
+			return
+		}
+	} else if r.format == "protobuf" {
+		if err := proto.Unmarshal(p.Payload, &requestPacket); err != nil {
+			r.logger.Error("Error unmarshalling message", zap.Error(err))
+			return
+		}
+	} else {
+		r.logger.Error("Unknown format: " + r.format)
 		return
 	}
 
-	var responsePacket any
+	var responsePacket data.HTTPResponsePacket
 
 	if r.protocol == "http1" {
 		var responseData data.HTTPResponseData
@@ -114,7 +128,23 @@ func (r *Router) Route(p *packets.Publish) {
 	}
 
 	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestId)
-	responsePayload, err := json.Marshal(responsePacket)
+
+	var responsePayload []byte
+	var err error
+	if r.format == "json" {
+		responsePayload, err = json.Marshal(&responsePacket)
+		if err != nil {
+			r.logger.Fatal(err.Error())
+		}
+	} else if r.format == "protobuf" {
+		responsePayload, err = proto.Marshal(&responsePacket)
+		if err != nil {
+			r.logger.Fatal(err.Error())
+		}
+	} else {
+		r.logger.Fatal("Unknown format: " + r.format)
+	}
+
 	if err != nil {
 		r.logger.Error("Error marshalling response data", zap.Error(err))
 		return

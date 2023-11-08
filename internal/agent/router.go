@@ -56,12 +56,14 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 	}
 }
 
-func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int, error) {
+func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int, http.Header, error) {
+	var responseHeader http.Header
+
 	url := "http://" + proxyHost + data.Path
 	body := bytes.NewBufferString(data.Body)
 	req, err := http.NewRequest(data.Method, url, body)
 	if err != nil {
-		return "", 0, err
+		return "", 0, responseHeader, err
 	}
 	for key, values := range data.Headers.GetHeaders() {
 		for _, value := range values.GetValues() {
@@ -71,15 +73,15 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", 0, err
+		return "", 0, responseHeader, err
 	}
 	defer resp.Body.Close()
 	responseBody := new(bytes.Buffer)
 	_, err = responseBody.ReadFrom(resp.Body)
 	if err != nil {
-		return "", resp.StatusCode, err
+		return "", resp.StatusCode, responseHeader, err
 	}
-	return responseBody.String(), resp.StatusCode, nil
+	return responseBody.String(), resp.StatusCode, resp.Header, nil
 }
 
 func (r *Router) Route(p *packets.Publish) {
@@ -104,12 +106,14 @@ func (r *Router) Route(p *packets.Publish) {
 
 	if r.protocol == "http1" {
 		var responseData data.HTTPResponseData
-		httpResponse, statusCode, err := sendHTTP1Request(r.proxyHost, requestPacket.HttpRequestData)
+		httpResponse, statusCode, responseHeader, err := sendHTTP1Request(r.proxyHost, requestPacket.HttpRequestData)
 		if err != nil {
 			r.logger.Error("Error sending HTTP request", zap.Error(err))
+			protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
 			responseData = data.HTTPResponseData{
 				Body:       err.Error(),
 				StatusCode: http.StatusInternalServerError,
+				Headers:    &protoHeaders,
 			}
 		} else {
 			responseData = data.HTTPResponseData{

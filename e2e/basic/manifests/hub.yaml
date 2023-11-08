@@ -51,4 +51,5 @@ metadata:
   namespace: fuyuu-router
 data:
   config.toml: |
-    # TODO
+    [networking]
+    format = "json"

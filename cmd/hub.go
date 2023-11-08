@@ -2,13 +2,11 @@ package cmd
 
 import (
 	"context"
-	"log"
 
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/internal/hub"
 	ncp "github.com/ohkinozomu/neutral-cp"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -66,16 +64,9 @@ var hubCmd = &cobra.Command{
 			panic(err)
 		}
 
-		viper.SetConfigFile(configPath)
-
-		if err := viper.ReadInConfig(); err != nil {
-			logger.Fatal(err.Error())
-		}
-
-		var config common.CommonConfigV2
-		err = viper.Unmarshal(&config)
+		config, err := common.CreateConfig(configPath)
 		if err != nil {
-			log.Fatalf(err.Error())
+			logger.Fatal(err.Error())
 		}
 
 		if config.Profiling.Registry != "" {

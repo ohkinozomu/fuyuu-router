@@ -47,10 +47,12 @@ func Start(c AgentConfig) {
 		AgentId: c.ID,
 		Labels:  c.Labels,
 	}
+
 	terminatePayload, err := json.Marshal(&teminatePacket)
 	if err != nil {
 		c.Logger.Fatal(err.Error())
 	}
+
 	connect.WillMessage = &paho.WillMessage{
 		Retain:  false,
 		QoS:     0,

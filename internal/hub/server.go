@@ -132,18 +132,26 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	bodyBytes := make([]byte, r.ContentLength)
 	r.Body.Read(bodyBytes)
 
+	headers := make(map[string]*data.HeaderValueList)
+	for k, v := range r.Header {
+		headers[k] = &data.HeaderValueList{Values: v}
+	}
+	dataHeaders := data.HTTPHeaders{
+		Headers: headers,
+	}
+
 	requestData := data.HTTPRequestData{
 		Method:  r.Method,
 		Path:    r.URL.Path,
-		Headers: r.Header,
+		Headers: &dataHeaders,
 		Body:    string(bodyBytes),
 	}
 	requestPacket := data.HTTPRequestPacket{
-		RequestID:       uuid,
-		HTTPRequestData: requestData,
+		RequestId:       uuid,
+		HttpRequestData: &requestData,
 	}
 
-	jsonData, err := json.Marshal(requestPacket)
+	jsonData, err := json.Marshal(&requestPacket)
 	if err != nil {
 		panic(err)
 	}
@@ -164,7 +172,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if value != nil {
-			w.WriteHeader(httpResponseData.StatusCode)
+			w.WriteHeader(int(httpResponseData.StatusCode))
 			w.Write([]byte(httpResponseData.Body))
 		}
 	case <-ctx.Done():

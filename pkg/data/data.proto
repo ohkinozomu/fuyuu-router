@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package data;
+
+option go_package = "github.com/ohkinozomu/fuyuu-router/pkg/data";
+
+message HeaderValueList {
+    repeated string values = 1;
+}
+  
+message HTTPHeaders {
+    map<string, HeaderValueList> headers = 1;
+}
+
+message HTTPRequestData {
+    string method = 1;
+    string path = 2;
+    HTTPHeaders headers = 3;
+    string body = 4;
+}
+
+message HTTPRequestPacket {
+    string request_id = 1;
+    HTTPRequestData http_request_data = 2;
+}
+
+message HTTPResponseData {
+    string body = 1;
+    int32 status_code = 2;
+}
+
+message HTTPResponsePacket {
+    string request_id = 1;
+    HTTPResponseData http_response_data = 2;
+}
+
+message LaunchPacket {
+    string agent_id = 1;
+    map<string, string> labels = 2;
+}
+
+message TerminatePacket {
+    string agent_id = 1;
+    map<string, string> labels = 2;
+}

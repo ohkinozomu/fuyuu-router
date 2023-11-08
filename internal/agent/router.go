@@ -53,15 +53,15 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 	}
 }
 
-func sendHTTP1Request(proxyHost string, data data.HTTPRequestData) (string, int, error) {
+func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int, error) {
 	url := "http://" + proxyHost + data.Path
 	body := bytes.NewBufferString(data.Body)
 	req, err := http.NewRequest(data.Method, url, body)
 	if err != nil {
 		return "", 0, err
 	}
-	for key, values := range data.Headers {
-		for _, value := range values {
+	for key, values := range data.Headers.GetHeaders() {
+		for _, value := range values.GetValues() {
 			req.Header.Add(key, value)
 		}
 	}
@@ -90,7 +90,7 @@ func (r *Router) Route(p *packets.Publish) {
 
 	if r.protocol == "http1" {
 		var responseData data.HTTPResponseData
-		httpResponse, statusCode, err := sendHTTP1Request(r.proxyHost, requestPacket.HTTPRequestData)
+		httpResponse, statusCode, err := sendHTTP1Request(r.proxyHost, requestPacket.HttpRequestData)
 		if err != nil {
 			r.logger.Error("Error sending HTTP request", zap.Error(err))
 			responseData = data.HTTPResponseData{
@@ -100,20 +100,20 @@ func (r *Router) Route(p *packets.Publish) {
 		} else {
 			responseData = data.HTTPResponseData{
 				Body:       httpResponse,
-				StatusCode: statusCode,
+				StatusCode: int32(statusCode),
 			}
 		}
 
 		responsePacket = data.HTTPResponsePacket{
-			RequestID:        requestPacket.RequestID,
-			HTTPResponseData: responseData,
+			RequestId:        requestPacket.RequestId,
+			HttpResponseData: &responseData,
 		}
 	} else {
 		r.logger.Error("Unknown protocol: " + r.protocol)
 		return
 	}
 
-	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestID)
+	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestId)
 	responsePayload, err := json.Marshal(responsePacket)
 	if err != nil {
 		r.logger.Error("Error marshalling response data", zap.Error(err))

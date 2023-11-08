@@ -32,14 +32,14 @@ func (r *Router) Route(p *packets.Publish) {
 		return
 	}
 
-	httpResponseData, err := json.Marshal(responsePacket.HTTPResponseData)
+	httpResponseData, err := json.Marshal(responsePacket.HttpResponseData)
 	if err != nil {
 		r.logger.Info("Error marshalling HTTP response data: " + err.Error())
 		return
 	}
 
 	err = r.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry([]byte(responsePacket.RequestID), []byte(httpResponseData)).WithTTL(time.Minute * 5)
+		e := badger.NewEntry([]byte(responsePacket.RequestId), []byte(httpResponseData)).WithTTL(time.Minute * 5)
 		err = txn.SetEntry(e)
 		return err
 	})

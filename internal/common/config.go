@@ -21,11 +21,11 @@ type CommonConfig struct {
 
 type CommonConfigV2 struct {
 	Profiling struct {
-		Registry      string `mapstructure:"registry"`
+		Registry      string `mapstructure:"registry" validate:"omitempty,oneof=cloudprofiler pyroscope"`
 		ServerAddress string `mapstructure:"server_address"`
 	}
 	Networking struct {
-		Format string `mapstructure:"format" validate:"oneof=json protobuf"`
+		Format string `mapstructure:"format" validate:"omitempty,oneof=json protobuf"`
 	}
 }
 

@@ -3,7 +3,6 @@ package agent
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 )
 
 type Router struct {
@@ -63,7 +61,7 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 	body := bytes.NewBufferString(data.Body)
 	req, err := http.NewRequest(data.Method, url, body)
 	if err != nil {
-		return "", 0, responseHeader, err
+		return "", http.StatusInternalServerError, responseHeader, err
 	}
 	for key, values := range data.Headers.GetHeaders() {
 		for _, value := range values.GetValues() {
@@ -73,7 +71,7 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", 0, responseHeader, err
+		return "", http.StatusInternalServerError, responseHeader, err
 	}
 	defer resp.Body.Close()
 	responseBody := new(bytes.Buffer)
@@ -85,20 +83,9 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 }
 
 func (r *Router) Route(p *packets.Publish) {
-	requestPacket := data.HTTPRequestPacket{}
-
-	if r.format == "json" {
-		if err := json.Unmarshal(p.Payload, &requestPacket); err != nil {
-			r.logger.Error("Error unmarshalling message", zap.Error(err))
-			return
-		}
-	} else if r.format == "protobuf" {
-		if err := proto.Unmarshal(p.Payload, &requestPacket); err != nil {
-			r.logger.Error("Error unmarshalling message", zap.Error(err))
-			return
-		}
-	} else {
-		r.logger.Error("Unknown format: " + r.format)
+	requestPacket, err := data.DeserializeRequestPacket(p.Payload, r.format)
+	if err != nil {
+		r.logger.Error("Error deserializing request packet", zap.Error(err))
 		return
 	}
 
@@ -116,12 +103,13 @@ func (r *Router) Route(p *packets.Publish) {
 				Headers:    &protoHeaders,
 			}
 		} else {
+			protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
 			responseData = data.HTTPResponseData{
 				Body:       httpResponse,
 				StatusCode: int32(statusCode),
+				Headers:    &protoHeaders,
 			}
 		}
-
 		responsePacket = data.HTTPResponsePacket{
 			RequestId:        requestPacket.RequestId,
 			HttpResponseData: &responseData,
@@ -133,24 +121,9 @@ func (r *Router) Route(p *packets.Publish) {
 
 	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestId)
 
-	var responsePayload []byte
-	var err error
-	if r.format == "json" {
-		responsePayload, err = json.Marshal(&responsePacket)
-		if err != nil {
-			r.logger.Fatal(err.Error())
-		}
-	} else if r.format == "protobuf" {
-		responsePayload, err = proto.Marshal(&responsePacket)
-		if err != nil {
-			r.logger.Fatal(err.Error())
-		}
-	} else {
-		r.logger.Fatal("Unknown format: " + r.format)
-	}
-
+	responsePayload, err := data.SerializeResponsePacket(&responsePacket, r.format)
 	if err != nil {
-		r.logger.Error("Error marshalling response data", zap.Error(err))
+		r.logger.Error("Error serializing response packet", zap.Error(err))
 		return
 	}
 
@@ -160,7 +133,8 @@ func (r *Router) Route(p *packets.Publish) {
 		Payload: responsePayload,
 	})
 	if err != nil {
-		panic(err)
+		r.logger.Error("Error publishing response", zap.Error(err))
+		return
 	}
 }
 

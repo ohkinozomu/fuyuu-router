@@ -21,11 +21,12 @@ type CommonConfig struct {
 
 type CommonConfigV2 struct {
 	Profiling struct {
-		Registry      string `mapstructure:"registry"`
+		Registry      string `mapstructure:"registry" validate:"omitempty,oneof=cloudprofiler pyroscope"`
 		ServerAddress string `mapstructure:"server_address"`
 	}
 	Networking struct {
-		Format string `mapstructure:"format" validate:"oneof=json protobuf"`
+		Format   string `mapstructure:"format" validate:"omitempty,oneof=json protobuf"`
+		Compress string `mapstructure:"compress" validate:"omitempty,oneof=none zstd"`
 	}
 }
 
@@ -33,6 +34,7 @@ func CreateConfig(configPath string) (CommonConfigV2, error) {
 	var config CommonConfigV2
 
 	viper.SetDefault("networking.format", "json")
+	viper.SetDefault("networking.compress", "none")
 	viper.SetConfigFile(configPath)
 
 	if err := viper.ReadInConfig(); err != nil {

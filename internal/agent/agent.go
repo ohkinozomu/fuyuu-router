@@ -106,7 +106,7 @@ func Start(c AgentConfig) {
 		Payload: launchPayload,
 	})
 	if err != nil {
-		c.Logger.Error(err.Error())
+		c.Logger.Fatal(err.Error())
 	}
 
 	_, err = s.client.Subscribe(context.Background(), &paho.Subscribe{

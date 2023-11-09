@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -18,11 +17,11 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/klauspost/compress/zstd"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 )
 
 type server struct {
@@ -31,6 +30,7 @@ type server struct {
 	db             *badger.DB
 	logger         *zap.Logger
 	format         string
+	encoder        *zstd.Encoder
 }
 
 func newServer(c HubConfig) server {
@@ -65,12 +65,21 @@ func newServer(c HubConfig) server {
 	}
 	requestClient := paho.NewClient(requestClientConfig)
 
+	var encoder *zstd.Encoder
+	if c.CommonConfigV2.Networking.Compress == "zstd" {
+		encoder, err = zstd.NewWriter(nil)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	}
+
 	return server{
 		requestClient:  requestClient,
 		responseClient: responseClient,
 		db:             db,
 		logger:         c.Logger,
 		format:         c.CommonConfigV2.Networking.Format,
+		encoder:        encoder,
 	}
 }
 
@@ -148,49 +157,31 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		HttpRequestData: &requestData,
 	}
 
-	var requestPayload []byte
-	if s.format == "json" {
-		requestPayload, err = json.Marshal(&requestPacket)
-		if err != nil {
-			s.logger.Info(err.Error())
-			return
-		}
-	} else if s.format == "protobuf" {
-		requestPayload, err = proto.Marshal(&requestPacket)
-		if err != nil {
-			s.logger.Info(err.Error())
-			return
-		}
-	} else {
-		s.logger.Info("Unknown format: " + s.format)
+	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.format, s.encoder)
+	if err != nil {
+		s.logger.Error("Error serializing request packet", zap.Error(err))
 		return
 	}
+
 	requestTopic := topics.RequestTopic(agentID)
 	s.logger.Debug("Publishing request...")
-	s.requestClient.Publish(context.Background(), &paho.Publish{
+	_, err = s.requestClient.Publish(context.Background(), &paho.Publish{
 		Payload: requestPayload,
 		Topic:   requestTopic,
 	})
+	if err != nil {
+		s.logger.Error("Error publishing request", zap.Error(err))
+		return
+	}
 
 	select {
 	case value := <-dataCh:
 		s.logger.Debug("Writing response...")
-		var httpResponseData data.HTTPResponseData
-		if s.format == "json" {
-			if err := json.Unmarshal(value, &httpResponseData); err != nil {
-				s.logger.Error("Error unmarshalling message", zap.Error(err))
-				return
-			}
-		} else if s.format == "protobuf" {
-			if err := proto.Unmarshal(value, &httpResponseData); err != nil {
-				s.logger.Error("Error unmarshalling message", zap.Error(err))
-				return
-			}
-		} else {
-			s.logger.Error("Unknown format: " + s.format)
+		httpResponseData, err := data.DeserializeHTTPResponseData(value, s.format)
+		if err != nil {
+			s.logger.Error("Error deserializing response packet", zap.Error(err))
 			return
 		}
-
 		if value != nil {
 			w.WriteHeader(int(httpResponseData.StatusCode))
 			w.Write([]byte(httpResponseData.Body))

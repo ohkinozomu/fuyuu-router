@@ -1,7 +1,7 @@
 package hub
 
 import (
-	"encoding/json"
+	"log"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
@@ -9,7 +9,6 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 )
 
 type Router struct {
@@ -29,41 +28,21 @@ func NewRouter(db *badger.DB, logger *zap.Logger, format string) *Router {
 }
 
 func (r *Router) Route(p *packets.Publish) {
-	responsePacket := data.HTTPResponsePacket{}
+	httpResponsePacket, err := data.DeserializeResponsePacket(p.Payload, r.format)
+	if err != nil {
+		r.logger.Info("Error deserializing response packet: " + err.Error())
+		return
+	}
+	log.Printf("Debug 0: %d", httpResponsePacket.GetHttpResponseData().GetStatusCode())
 
-	if r.format == "json" {
-		if err := json.Unmarshal(p.Payload, &responsePacket); err != nil {
-			r.logger.Error("Error unmarshalling message", zap.Error(err))
-			return
-		}
-	} else if r.format == "protobuf" {
-		if err := proto.Unmarshal(p.Payload, &responsePacket); err != nil {
-			r.logger.Error("Error unmarshalling message", zap.Error(err))
-			return
-		}
-	} else {
-		r.logger.Error("Unknown format: " + r.format)
+	httpResponseData, err := data.SerializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), r.format)
+	if err != nil {
+		r.logger.Info("Error serializing response packet: " + err.Error())
 		return
 	}
 
-	var httpResponseData []byte
-	var err error
-	if r.format == "json" {
-		httpResponseData, err = json.Marshal(responsePacket.HttpResponseData)
-		if err != nil {
-			r.logger.Fatal(err.Error())
-		}
-	} else if r.format == "protobuf" {
-		httpResponseData, err = proto.Marshal(responsePacket.HttpResponseData)
-		if err != nil {
-			r.logger.Fatal(err.Error())
-		}
-	} else {
-		r.logger.Fatal("Unknown format: " + r.format)
-	}
-
 	err = r.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry([]byte(responsePacket.RequestId), httpResponseData).WithTTL(time.Minute * 5)
+		e := badger.NewEntry([]byte(httpResponsePacket.RequestId), httpResponseData).WithTTL(time.Minute * 5)
 		err = txn.SetEntry(e)
 		return err
 	})

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -18,7 +19,7 @@ func HTTPHeaderToProtoHeaders(httpHeader http.Header) HTTPHeaders {
 	}
 }
 
-func SerializeRequestPacket(packet *HTTPRequestPacket, format string) ([]byte, error) {
+func SerializeRequestPacket(packet *HTTPRequestPacket, format string, encoder *zstd.Encoder) ([]byte, error) {
 	var err error
 	var payload []byte
 	if format == "json" {
@@ -32,11 +33,21 @@ func SerializeRequestPacket(packet *HTTPRequestPacket, format string) ([]byte, e
 		return nil, err
 	}
 
+	if encoder != nil {
+		payload = encoder.EncodeAll(payload, nil)
+	}
+
 	return payload, nil
 }
 
-func DeserializeRequestPacket(payload []byte, format string) (*HTTPRequestPacket, error) {
+func DeserializeRequestPacket(payload []byte, format string, decoder *zstd.Decoder) (*HTTPRequestPacket, error) {
 	var err error
+	if decoder != nil {
+		payload, err = decoder.DecodeAll(payload, nil)
+		if err != nil {
+			return &HTTPRequestPacket{}, err
+		}
+	}
 
 	requestPacket := HTTPRequestPacket{}
 	if format == "json" {
@@ -49,7 +60,7 @@ func DeserializeRequestPacket(payload []byte, format string) (*HTTPRequestPacket
 	return &requestPacket, err
 }
 
-func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string) ([]byte, error) {
+func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string, encoder *zstd.Encoder) ([]byte, error) {
 	var err error
 	var responsePayload []byte
 	if format == "json" {
@@ -62,12 +73,20 @@ func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string) 
 	if err != nil {
 		return nil, err
 	}
-
+	if encoder != nil {
+		responsePayload = encoder.EncodeAll(responsePayload, nil)
+	}
 	return responsePayload, err
 }
 
-func DeserializeResponsePacket(payload []byte, format string) (*HTTPResponsePacket, error) {
+func DeserializeResponsePacket(payload []byte, format string, decoder *zstd.Decoder) (*HTTPResponsePacket, error) {
 	var err error
+	if decoder != nil {
+		payload, err = decoder.DecodeAll(payload, nil)
+		if err != nil {
+			return &HTTPResponsePacket{}, err
+		}
+	}
 
 	responsePacket := HTTPResponsePacket{}
 	if format == "json" {

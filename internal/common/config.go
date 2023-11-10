@@ -25,7 +25,8 @@ type CommonConfigV2 struct {
 		ServerAddress string `mapstructure:"server_address"`
 	}
 	Networking struct {
-		Format string `mapstructure:"format" validate:"omitempty,oneof=json protobuf"`
+		Format   string `mapstructure:"format" validate:"omitempty,oneof=json protobuf"`
+		Compress string `mapstructure:"compress" validate:"omitempty,oneof=none zstd"`
 	}
 }
 
@@ -33,6 +34,7 @@ func CreateConfig(configPath string) (CommonConfigV2, error) {
 	var config CommonConfigV2
 
 	viper.SetDefault("networking.format", "json")
+	viper.SetDefault("networking.compress", "none")
 	viper.SetConfigFile(configPath)
 
 	if err := viper.ReadInConfig(); err != nil {

@@ -1,39 +1,52 @@
 package hub
 
 import (
-	"log"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/klauspost/compress/zstd"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"go.uber.org/zap"
 )
 
 type Router struct {
-	db     *badger.DB
-	logger *zap.Logger
-	format string
+	db      *badger.DB
+	logger  *zap.Logger
+	format  string
+	decoder *zstd.Decoder
 }
 
 var _ paho.Router = (*Router)(nil)
 
-func NewRouter(db *badger.DB, logger *zap.Logger, format string) *Router {
+func NewRouter(db *badger.DB, logger *zap.Logger, format, compress string) *Router {
+	var decoder *zstd.Decoder
+	var err error
+	if compress == "zstd" {
+		logger.Debug("Initializing zstd decoder...")
+		decoder, err = zstd.NewReader(nil)
+		if err != nil {
+			logger.Fatal(err.Error())
+		}
+	} else if compress != "none" {
+		logger.Fatal("Unknown compress: " + compress)
+	}
+
 	return &Router{
-		db:     db,
-		logger: logger,
-		format: format,
+		db:      db,
+		logger:  logger,
+		format:  format,
+		decoder: decoder,
 	}
 }
 
 func (r *Router) Route(p *packets.Publish) {
-	httpResponsePacket, err := data.DeserializeResponsePacket(p.Payload, r.format)
+	httpResponsePacket, err := data.DeserializeResponsePacket(p.Payload, r.format, r.decoder)
 	if err != nil {
 		r.logger.Info("Error deserializing response packet: " + err.Error())
 		return
 	}
-	log.Printf("Debug 0: %d", httpResponsePacket.GetHttpResponseData().GetStatusCode())
 
 	httpResponseData, err := data.SerializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), r.format)
 	if err != nil {

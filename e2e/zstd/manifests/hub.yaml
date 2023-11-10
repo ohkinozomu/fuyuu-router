@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuyuu-router-hub
+  namespace: fuyuu-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuyuu-router-hub
+  template:
+    metadata:
+      labels:
+        app: fuyuu-router-hub
+    spec:
+      containers:
+      - name: fuyuu-router-hub
+        image: fuyuu-router:dev
+        volumeMounts:
+        - name: fuyuu-router-hub-config
+          mountPath: /app/config
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /app/fuyuu-router hub -c /app/config/config.toml -b nanomq.nanomq:1883 --loglevel debug
+        ports:
+        - containerPort: 8080
+      volumes:
+      - name: fuyuu-router-hub-config
+        configMap:
+          name: fuyuu-router-hub-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuyuu-router-hub
+  namespace: fuyuu-router
+spec:
+  selector:
+    app: fuyuu-router-hub
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: NodePort
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuyuu-router-hub-config
+  namespace: fuyuu-router
+data:
+  config.toml: |
+    [networking]
+    format = "json"
+    compress = "zstd"

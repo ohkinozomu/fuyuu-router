@@ -8,6 +8,7 @@ import (
 
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/klauspost/compress/zstd"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
@@ -22,6 +23,8 @@ type Router struct {
 	logger      *zap.Logger
 	protocol    string
 	format      string
+	encoder     *zstd.Encoder
+	decoder     *zstd.Decoder
 }
 
 var _ paho.Router = (*Router)(nil)
@@ -43,6 +46,20 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
 	}
 
+	var encoder *zstd.Encoder
+	var decoder *zstd.Decoder
+	if c.CommonConfigV2.Networking.Compress == "zstd" {
+		encoder, err = zstd.NewWriter(nil)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		decoder, err = zstd.NewReader(nil)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	}
+
 	return &Router{
 		messageChan: messageChan,
 		client:      client,
@@ -51,6 +68,8 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 		logger:      c.Logger,
 		protocol:    c.Protocol,
 		format:      c.CommonConfigV2.Networking.Format,
+		encoder:     encoder,
+		decoder:     decoder,
 	}
 }
 
@@ -83,7 +102,7 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 }
 
 func (r *Router) Route(p *packets.Publish) {
-	requestPacket, err := data.DeserializeRequestPacket(p.Payload, r.format)
+	requestPacket, err := data.DeserializeRequestPacket(p.Payload, r.format, r.decoder)
 	if err != nil {
 		r.logger.Error("Error deserializing request packet", zap.Error(err))
 		return
@@ -121,12 +140,11 @@ func (r *Router) Route(p *packets.Publish) {
 
 	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestId)
 
-	responsePayload, err := data.SerializeResponsePacket(&responsePacket, r.format)
+	responsePayload, err := data.SerializeResponsePacket(&responsePacket, r.format, r.encoder)
 	if err != nil {
 		r.logger.Error("Error serializing response packet", zap.Error(err))
 		return
 	}
-
 	_, err = r.client.Publish(context.Background(), &paho.Publish{
 		Topic:   responseTopic,
 		QoS:     0,

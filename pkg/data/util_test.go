@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,14 +17,39 @@ func TestHTTPHeaderToProtoHeaders(t *testing.T) {
 }
 
 func TestSerializedRequestPacket(t *testing.T) {
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	testCases := []struct {
-		format string
+		format  string
+		encoder *zstd.Encoder
+		decoder *zstd.Decoder
 	}{
 		{
-			format: "json",
+			format:  "json",
+			encoder: nil,
+			decoder: nil,
 		},
 		{
-			format: "protobuf",
+			format:  "protobuf",
+			encoder: nil,
+			decoder: nil,
+		},
+		{
+			format:  "json",
+			encoder: encoder,
+			decoder: decoder,
+		},
+		{
+			format:  "protobuf",
+			encoder: encoder,
+			decoder: decoder,
 		},
 	}
 
@@ -36,7 +62,7 @@ func TestSerializedRequestPacket(t *testing.T) {
 					Path:   "/",
 					Headers: &HTTPHeaders{
 						Headers: map[string]*HeaderValueList{
-							"Content-Type": &HeaderValueList{
+							"Content-Type": {
 								Values: []string{"application/json"},
 							},
 						},
@@ -44,11 +70,11 @@ func TestSerializedRequestPacket(t *testing.T) {
 					Body: "test",
 				},
 			}
-			serializedRequestPacket, err := SerializeRequestPacket(&httpRequestPacket, testCase.format)
+			serializedRequestPacket, err := SerializeRequestPacket(&httpRequestPacket, testCase.format, testCase.encoder)
 			if err != nil {
 				t.Fatal(err)
 			}
-			deserializedRequestPacket, err := DeserializeRequestPacket(serializedRequestPacket, testCase.format)
+			deserializedRequestPacket, err := DeserializeRequestPacket(serializedRequestPacket, testCase.format, testCase.decoder)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,14 +88,39 @@ func TestSerializedRequestPacket(t *testing.T) {
 }
 
 func TestSerializedResponsePacket(t *testing.T) {
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	testCases := []struct {
-		format string
+		format  string
+		encoder *zstd.Encoder
+		decoder *zstd.Decoder
 	}{
 		{
-			format: "json",
+			format:  "json",
+			encoder: nil,
+			decoder: nil,
 		},
 		{
-			format: "protobuf",
+			format:  "protobuf",
+			encoder: nil,
+			decoder: nil,
+		},
+		{
+			format:  "json",
+			encoder: encoder,
+			decoder: decoder,
+		},
+		{
+			format:  "protobuf",
+			encoder: encoder,
+			decoder: decoder,
 		},
 	}
 
@@ -89,11 +140,11 @@ func TestSerializedResponsePacket(t *testing.T) {
 					Body:       "test",
 				},
 			}
-			serializedResponsePacket, err := SerializeResponsePacket(&httpResponsePacket, testCase.format)
+			serializedResponsePacket, err := SerializeResponsePacket(&httpResponsePacket, testCase.format, testCase.encoder)
 			if err != nil {
 				t.Fatal(err)
 			}
-			deserializedResponsePacket, err := DeserializeResponsePacket(serializedResponsePacket, testCase.format)
+			deserializedResponsePacket, err := DeserializeResponsePacket(serializedResponsePacket, testCase.format, testCase.decoder)
 			if err != nil {
 				t.Fatal(err)
 			}

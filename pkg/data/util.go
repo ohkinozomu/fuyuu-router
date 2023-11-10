@@ -19,7 +19,7 @@ func HTTPHeaderToProtoHeaders(httpHeader http.Header) HTTPHeaders {
 	}
 }
 
-func SerializeRequestPacket(packet *HTTPRequestPacket, format string, encoder *zstd.Encoder) ([]byte, error) {
+func SerializeRequestPacket(packet *HTTPRequestPacket, format string) ([]byte, error) {
 	var err error
 	var payload []byte
 	if format == "json" {
@@ -33,34 +33,23 @@ func SerializeRequestPacket(packet *HTTPRequestPacket, format string, encoder *z
 		return nil, err
 	}
 
-	if encoder != nil {
-		payload = encoder.EncodeAll(payload, nil)
-	}
-
 	return payload, nil
 }
 
-func DeserializeRequestPacket(payload []byte, format string, decoder *zstd.Decoder) (*HTTPRequestPacket, error) {
+func DeserializeRequestPacket(payload []byte, format string) (*HTTPRequestPacket, error) {
 	var err error
-	if decoder != nil {
-		payload, err = decoder.DecodeAll(payload, nil)
-		if err != nil {
-			return &HTTPRequestPacket{}, err
-		}
-	}
-
 	requestPacket := HTTPRequestPacket{}
 	if format == "json" {
 		err = json.Unmarshal(payload, &requestPacket)
 	} else if format == "protobuf" {
 		err = proto.Unmarshal(payload, &requestPacket)
 	} else {
-		return &HTTPRequestPacket{}, err
+		return nil, err
 	}
 	return &requestPacket, err
 }
 
-func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string, encoder *zstd.Encoder) ([]byte, error) {
+func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string) ([]byte, error) {
 	var err error
 	var responsePayload []byte
 	if format == "json" {
@@ -73,21 +62,12 @@ func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string, 
 	if err != nil {
 		return nil, err
 	}
-	if encoder != nil {
-		responsePayload = encoder.EncodeAll(responsePayload, nil)
-	}
+
 	return responsePayload, err
 }
 
-func DeserializeResponsePacket(payload []byte, format string, decoder *zstd.Decoder) (*HTTPResponsePacket, error) {
+func DeserializeResponsePacket(payload []byte, format string) (*HTTPResponsePacket, error) {
 	var err error
-	if decoder != nil {
-		payload, err = decoder.DecodeAll(payload, nil)
-		if err != nil {
-			return &HTTPResponsePacket{}, err
-		}
-	}
-
 	responsePacket := HTTPResponsePacket{}
 	if format == "json" {
 		err = json.Unmarshal(payload, &responsePacket)
@@ -99,7 +79,7 @@ func DeserializeResponsePacket(payload []byte, format string, decoder *zstd.Deco
 	return &responsePacket, err
 }
 
-func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string) ([]byte, error) {
+func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string, encoder *zstd.Encoder) ([]byte, error) {
 	var b []byte
 	var err error
 	if format == "json" {
@@ -115,10 +95,21 @@ func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string) (
 	} else {
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
+	if encoder != nil {
+		b = encoder.EncodeAll(b, nil)
+	}
 	return b, nil
 }
 
-func DeserializeHTTPRequestData(b []byte, format string) (*HTTPRequestData, error) {
+func DeserializeHTTPRequestData(b []byte, format string, decoder *zstd.Decoder) (*HTTPRequestData, error) {
+	var err error
+	if decoder != nil {
+		b, err = decoder.DecodeAll(b, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var httpRequestData HTTPRequestData
 	if format == "json" {
 		if err := json.Unmarshal(b, &httpRequestData); err != nil {
@@ -134,7 +125,7 @@ func DeserializeHTTPRequestData(b []byte, format string) (*HTTPRequestData, erro
 	return &httpRequestData, nil
 }
 
-func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string) ([]byte, error) {
+func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string, encoder *zstd.Encoder) ([]byte, error) {
 	var b []byte
 	var err error
 	if format == "json" {
@@ -150,10 +141,20 @@ func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string
 	} else {
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
+	if encoder != nil {
+		b = encoder.EncodeAll(b, nil)
+	}
 	return b, nil
 }
 
-func DeserializeHTTPResponseData(b []byte, format string) (*HTTPResponseData, error) {
+func DeserializeHTTPResponseData(b []byte, format string, decoder *zstd.Decoder) (*HTTPResponseData, error) {
+	var err error
+	if decoder != nil {
+		b, err = decoder.DecodeAll(b, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var httpResponseData HTTPResponseData
 	if format == "json" {
 		if err := json.Unmarshal(b, &httpResponseData); err != nil {

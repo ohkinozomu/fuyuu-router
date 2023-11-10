@@ -109,7 +109,7 @@ func (r *Router) Route(p *packets.Publish) {
 	}
 
 	var responsePacket data.HTTPResponsePacket
-	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, r.format, r.decoder)
+	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, requestPacket.Compress, r.format, r.decoder)
 	if err != nil {
 		r.logger.Error("Error deserializing request data", zap.Error(err))
 		return
@@ -142,6 +142,7 @@ func (r *Router) Route(p *packets.Publish) {
 		responsePacket = data.HTTPResponsePacket{
 			RequestId:        requestPacket.RequestId,
 			HttpResponseData: b,
+			Compress:         r.format,
 		}
 	} else {
 		r.logger.Error("Unknown protocol: " + r.protocol)

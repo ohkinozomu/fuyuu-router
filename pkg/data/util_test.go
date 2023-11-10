@@ -27,29 +27,29 @@ func TestSerializedRequestPacket(t *testing.T) {
 	}
 
 	testCases := []struct {
-		format  string
-		encoder *zstd.Encoder
-		decoder *zstd.Decoder
+		format   string
+		compress string
+		encoder  *zstd.Encoder
 	}{
 		{
-			format:  "json",
-			encoder: nil,
-			decoder: nil,
+			format:   "json",
+			compress: "none",
+			encoder:  nil,
 		},
 		{
-			format:  "protobuf",
-			encoder: nil,
-			decoder: nil,
+			format:   "protobuf",
+			compress: "none",
+			encoder:  nil,
 		},
 		{
-			format:  "json",
-			encoder: encoder,
-			decoder: decoder,
+			format:   "json",
+			compress: "zstd",
+			encoder:  encoder,
 		},
 		{
-			format:  "protobuf",
-			encoder: encoder,
-			decoder: decoder,
+			format:   "protobuf",
+			compress: "zstd",
+			encoder:  encoder,
 		},
 	}
 
@@ -67,7 +67,7 @@ func TestSerializedRequestPacket(t *testing.T) {
 				},
 				Body: "test",
 			}
-			b, err := SerializeHTTPRequestData(&httpRequestData, "json", testCase.encoder)
+			b, err := SerializeHTTPRequestData(&httpRequestData, testCase.format, testCase.encoder)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,6 +75,7 @@ func TestSerializedRequestPacket(t *testing.T) {
 			httpRequestPacket := HTTPRequestPacket{
 				RequestId:       "test",
 				HttpRequestData: b,
+				Compress:        testCase.compress,
 			}
 			serializedRequestPacket, err := SerializeRequestPacket(&httpRequestPacket, testCase.format)
 			if err != nil {
@@ -84,7 +85,7 @@ func TestSerializedRequestPacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			deserializedHTTPRequestData, err := DeserializeHTTPRequestData(deserializedRequestPacket.GetHttpRequestData(), "json", testCase.decoder)
+			deserializedHTTPRequestData, err := DeserializeHTTPRequestData(deserializedRequestPacket.GetHttpRequestData(), deserializedRequestPacket.Compress, testCase.format, decoder)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -147,11 +148,15 @@ func TestSerializedResponsePacket(t *testing.T) {
 				Headers:    &headers,
 				Body:       "test",
 			}
-			b, err := SerializeHTTPResponseData(&httpReponseData, "json", testCase.encoder)
+			b, err := SerializeHTTPResponseData(&httpReponseData, testCase.format, testCase.encoder)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			httpResponsePacket := HTTPResponsePacket{
 				RequestId:        "test",
 				HttpResponseData: b,
+				Compress:         testCase.format,
 			}
 			serializedResponsePacket, err := SerializeResponsePacket(&httpResponsePacket, testCase.format)
 			if err != nil {
@@ -161,7 +166,7 @@ func TestSerializedResponsePacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			deserializedHTTPResponseData, err := DeserializeHTTPResponseData(deserializedResponsePacket.GetHttpResponseData(), "json", testCase.decoder)
+			deserializedHTTPResponseData, err := DeserializeHTTPResponseData(deserializedResponsePacket.GetHttpResponseData(), testCase.format, testCase.decoder)
 			if err != nil {
 				t.Fatal(err)
 			}

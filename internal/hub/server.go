@@ -168,6 +168,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	requestPacket := data.HTTPRequestPacket{
 		RequestId:       uuid,
 		HttpRequestData: b,
+		Compress:        s.format,
 	}
 
 	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.format)

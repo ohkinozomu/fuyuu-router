@@ -31,6 +31,7 @@ type server struct {
 	format         string
 	encoder        *zstd.Encoder
 	decoder        *zstd.Decoder
+	compress       string
 }
 
 func newServer(c HubConfig) server {
@@ -86,7 +87,13 @@ func newServer(c HubConfig) server {
 		format:         c.CommonConfigV2.Networking.Format,
 		encoder:        encoder,
 		decoder:        decoder,
+		compress:       c.CommonConfigV2.Networking.Compress,
 	}
+}
+
+type httpReponseData struct {
+	data     []byte
+	compress string
 }
 
 func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +175,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	requestPacket := data.HTTPRequestPacket{
 		RequestId:       uuid,
 		HttpRequestData: b,
+		Compress:        s.compress,
 	}
 
 	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.format)
@@ -190,9 +198,28 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	select {
 	case value := <-dataCh:
 		s.logger.Debug("Writing response...")
-		httpResponseData, err := data.DeserializeHTTPResponseData(value, s.format, s.decoder)
+		var compress string
+		err := s.db.View(func(txn *badger.Txn) error {
+			item, err := txn.Get([]byte("compress/" + uuid))
+			if err != nil {
+				return err
+			}
+			err = item.Value(func(val []byte) error {
+				compress = string(val)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			return nil
+		})
 		if err != nil {
-			s.logger.Error("Error deserializing response packet", zap.Error(err))
+			s.logger.Error("Error getting compress value from database", zap.Error(err))
+			return
+		}
+		httpResponseData, err := data.DeserializeHTTPResponseData(value, compress, s.format, s.decoder)
+		if err != nil {
+			s.logger.Error("Error deserializing response data", zap.Error(err))
 			return
 		}
 		if value != nil {

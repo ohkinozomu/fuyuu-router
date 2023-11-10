@@ -74,7 +74,7 @@ func DeserializeResponsePacket(payload []byte, format string) (*HTTPResponsePack
 	} else if format == "protobuf" {
 		err = proto.Unmarshal(payload, &responsePacket)
 	} else {
-		return &HTTPResponsePacket{}, fmt.Errorf("unknown format: %s", format)
+		return nil, fmt.Errorf("unknown format: %s", format)
 	}
 	return &responsePacket, err
 }
@@ -101,9 +101,9 @@ func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string, e
 	return b, nil
 }
 
-func DeserializeHTTPRequestData(b []byte, format string, decoder *zstd.Decoder) (*HTTPRequestData, error) {
+func DeserializeHTTPRequestData(b []byte, compress string, format string, decoder *zstd.Decoder) (*HTTPRequestData, error) {
 	var err error
-	if decoder != nil {
+	if compress == "zstd" && decoder != nil {
 		b, err = decoder.DecodeAll(b, nil)
 		if err != nil {
 			return nil, err
@@ -147,9 +147,9 @@ func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string
 	return b, nil
 }
 
-func DeserializeHTTPResponseData(b []byte, format string, decoder *zstd.Decoder) (*HTTPResponseData, error) {
+func DeserializeHTTPResponseData(b []byte, compress string, format string, decoder *zstd.Decoder) (*HTTPResponseData, error) {
 	var err error
-	if decoder != nil {
+	if compress == "zstd" && decoder != nil {
 		b, err = decoder.DecodeAll(b, nil)
 		if err != nil {
 			return nil, err

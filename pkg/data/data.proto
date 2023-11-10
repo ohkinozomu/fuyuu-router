@@ -21,7 +21,7 @@ message HTTPRequestData {
 
 message HTTPRequestPacket {
     string request_id = 1;
-    HTTPRequestData http_request_data = 2;
+    bytes http_request_data = 2;
 }
 
 message HTTPResponseData {
@@ -32,7 +32,7 @@ message HTTPResponseData {
 
 message HTTPResponsePacket {
     string request_id = 1;
-    HTTPResponseData http_response_data = 2;
+    bytes http_response_data = 2;
 }
 
 message LaunchPacket {

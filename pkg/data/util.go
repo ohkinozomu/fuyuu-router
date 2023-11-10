@@ -99,6 +99,41 @@ func DeserializeResponsePacket(payload []byte, format string, decoder *zstd.Deco
 	return &responsePacket, err
 }
 
+func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string) ([]byte, error) {
+	var b []byte
+	var err error
+	if format == "json" {
+		b, err = json.Marshal(httpRequestData)
+		if err != nil {
+			return nil, err
+		}
+	} else if format == "protobuf" {
+		b, err = proto.Marshal(httpRequestData)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("unknown format: %s", format)
+	}
+	return b, nil
+}
+
+func DeserializeHTTPRequestData(b []byte, format string) (*HTTPRequestData, error) {
+	var httpRequestData HTTPRequestData
+	if format == "json" {
+		if err := json.Unmarshal(b, &httpRequestData); err != nil {
+			return nil, fmt.Errorf("error unmarshalling message: %v", err)
+		}
+	} else if format == "protobuf" {
+		if err := proto.Unmarshal(b, &httpRequestData); err != nil {
+			return nil, fmt.Errorf("error unmarshalling message: %v", err)
+		}
+	} else {
+		return nil, fmt.Errorf("unknown format: %v", format)
+	}
+	return &httpRequestData, nil
+}
+
 func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string) ([]byte, error) {
 	var b []byte
 	var err error

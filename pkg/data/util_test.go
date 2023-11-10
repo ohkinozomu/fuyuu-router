@@ -55,20 +55,26 @@ func TestSerializedRequestPacket(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.format, func(t *testing.T) {
-			httpRequestPacket := HTTPRequestPacket{
-				RequestId: "test",
-				HttpRequestData: &HTTPRequestData{
-					Method: "GET",
-					Path:   "/",
-					Headers: &HTTPHeaders{
-						Headers: map[string]*HeaderValueList{
-							"Content-Type": {
-								Values: []string{"application/json"},
-							},
+			httpRequestData := HTTPRequestData{
+				Method: "GET",
+				Path:   "/",
+				Headers: &HTTPHeaders{
+					Headers: map[string]*HeaderValueList{
+						"Content-Type": {
+							Values: []string{"application/json"},
 						},
 					},
-					Body: "test",
 				},
+				Body: "test",
+			}
+			b, err := SerializeHTTPRequestData(&httpRequestData, "json")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			httpRequestPacket := HTTPRequestPacket{
+				RequestId:       "test",
+				HttpRequestData: b,
 			}
 			serializedRequestPacket, err := SerializeRequestPacket(&httpRequestPacket, testCase.format, testCase.encoder)
 			if err != nil {
@@ -78,10 +84,14 @@ func TestSerializedRequestPacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assert.Equal(t, httpRequestPacket.GetHttpRequestData().Body, deserializedRequestPacket.GetHttpRequestData().Body)
-			assert.Equal(t, httpRequestPacket.GetHttpRequestData().Method, deserializedRequestPacket.GetHttpRequestData().Method)
-			assert.Equal(t, httpRequestPacket.GetHttpRequestData().Path, deserializedRequestPacket.GetHttpRequestData().Path)
-			assert.Equal(t, httpRequestPacket.GetHttpRequestData().Headers.GetHeaders()["Content-Type"].GetValues(), deserializedRequestPacket.GetHttpRequestData().Headers.GetHeaders()["Content-Type"].GetValues())
+			deserializedHTTPRequestData, err := DeserializeHTTPRequestData(deserializedRequestPacket.GetHttpRequestData(), "json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, httpRequestData.Body, deserializedHTTPRequestData.Body)
+			assert.Equal(t, httpRequestData.Method, deserializedHTTPRequestData.Method)
+			assert.Equal(t, httpRequestData.Path, deserializedHTTPRequestData.Path)
+			assert.Equal(t, httpRequestData.Headers.GetHeaders()["Content-Type"].GetValues(), deserializedHTTPRequestData.Headers.GetHeaders()["Content-Type"].GetValues())
 			assert.Equal(t, httpRequestPacket.GetRequestId(), deserializedRequestPacket.GetRequestId())
 		})
 	}
@@ -132,13 +142,16 @@ func TestSerializedResponsePacket(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.format, func(t *testing.T) {
+			httpReponseData := HTTPResponseData{
+				StatusCode: 200,
+				Headers:    &headers,
+				Body:       "test",
+			}
+			b, err := SerializeHTTPResponseData(&httpReponseData, "json")
+
 			httpResponsePacket := HTTPResponsePacket{
-				RequestId: "test",
-				HttpResponseData: &HTTPResponseData{
-					StatusCode: 200,
-					Headers:    &headers,
-					Body:       "test",
-				},
+				RequestId:        "test",
+				HttpResponseData: b,
 			}
 			serializedResponsePacket, err := SerializeResponsePacket(&httpResponsePacket, testCase.format, testCase.encoder)
 			if err != nil {
@@ -148,9 +161,13 @@ func TestSerializedResponsePacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assert.Equal(t, httpResponsePacket.GetHttpResponseData().Body, deserializedResponsePacket.GetHttpResponseData().Body)
-			assert.Equal(t, httpResponsePacket.GetHttpResponseData().StatusCode, deserializedResponsePacket.GetHttpResponseData().StatusCode)
-			assert.Equal(t, httpResponsePacket.GetHttpResponseData().Headers.GetHeaders()["Content-Type"].GetValues(), deserializedResponsePacket.GetHttpResponseData().Headers.GetHeaders()["Content-Type"].GetValues())
+			deserializedHTTPResponseData, err := DeserializeHTTPResponseData(deserializedResponsePacket.GetHttpResponseData(), "json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, httpReponseData.Body, deserializedHTTPResponseData.Body)
+			assert.Equal(t, httpReponseData.StatusCode, deserializedHTTPResponseData.StatusCode)
+			assert.Equal(t, httpReponseData.Headers.GetHeaders()["Content-Type"].GetValues(), deserializedHTTPResponseData.Headers.GetHeaders()["Content-Type"].GetValues())
 			assert.Equal(t, httpResponsePacket.GetRequestId(), deserializedResponsePacket.GetRequestId())
 		})
 	}

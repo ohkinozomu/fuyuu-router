@@ -109,10 +109,15 @@ func (r *Router) Route(p *packets.Publish) {
 	}
 
 	var responsePacket data.HTTPResponsePacket
+	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, r.format)
+	if err != nil {
+		r.logger.Error("Error deserializing request data", zap.Error(err))
+		return
+	}
 
 	if r.protocol == "http1" {
 		var responseData data.HTTPResponseData
-		httpResponse, statusCode, responseHeader, err := sendHTTP1Request(r.proxyHost, requestPacket.HttpRequestData)
+		httpResponse, statusCode, responseHeader, err := sendHTTP1Request(r.proxyHost, httpRequestData)
 		if err != nil {
 			r.logger.Error("Error sending HTTP request", zap.Error(err))
 			protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
@@ -129,9 +134,14 @@ func (r *Router) Route(p *packets.Publish) {
 				Headers:    &protoHeaders,
 			}
 		}
+		b, err := data.SerializeHTTPResponseData(&responseData, r.format)
+		if err != nil {
+			r.logger.Error("Error serializing response data", zap.Error(err))
+			return
+		}
 		responsePacket = data.HTTPResponsePacket{
 			RequestId:        requestPacket.RequestId,
-			HttpResponseData: &responseData,
+			HttpResponseData: b,
 		}
 	} else {
 		r.logger.Error("Unknown protocol: " + r.protocol)

@@ -73,7 +73,6 @@ func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string, 
 	if err != nil {
 		return nil, err
 	}
-
 	if encoder != nil {
 		responsePayload = encoder.EncodeAll(responsePayload, nil)
 	}

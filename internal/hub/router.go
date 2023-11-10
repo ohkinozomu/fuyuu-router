@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"log"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
@@ -21,14 +20,17 @@ type Router struct {
 
 var _ paho.Router = (*Router)(nil)
 
-func NewRouter(db *badger.DB, logger *zap.Logger, format string) *Router {
+func NewRouter(db *badger.DB, logger *zap.Logger, format, compress string) *Router {
 	var decoder *zstd.Decoder
 	var err error
-	if format == "zstd" {
+	if compress == "zstd" {
+		logger.Debug("Initializing zstd decoder...")
 		decoder, err = zstd.NewReader(nil)
 		if err != nil {
 			logger.Fatal(err.Error())
 		}
+	} else if compress != "none" {
+		logger.Fatal("Unknown compress: " + compress)
 	}
 
 	return &Router{
@@ -45,7 +47,6 @@ func (r *Router) Route(p *packets.Publish) {
 		r.logger.Info("Error deserializing response packet: " + err.Error())
 		return
 	}
-	log.Printf("Debug 0: %d", httpResponsePacket.GetHttpResponseData().GetStatusCode())
 
 	httpResponseData, err := data.SerializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), r.format)
 	if err != nil {

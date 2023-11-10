@@ -3,7 +3,6 @@ package hub
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -49,7 +48,7 @@ func newServer(c HubConfig) server {
 	}
 	responseClientConfig := paho.ClientConfig{
 		Conn:   responseConn,
-		Router: NewRouter(db, c.Logger, c.CommonConfigV2.Networking.Format),
+		Router: NewRouter(db, c.Logger, c.CommonConfigV2.Networking.Format, c.CommonConfigV2.Networking.Compress),
 	}
 	responseClient := paho.NewClient(responseClientConfig)
 
@@ -86,11 +85,11 @@ func newServer(c HubConfig) server {
 func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.logger.Debug("Handling request...")
 	fuyuuRouterIDs := r.Header.Get("FuyuuRouter-IDs")
-	agentIDs := strings.Split(fuyuuRouterIDs, ",")
-	if len(agentIDs) == 0 {
+	if fuyuuRouterIDs == "" {
 		w.Write([]byte("FuyuuRouter-IDs header is required"))
 		return
 	}
+	agentIDs := strings.Split(fuyuuRouterIDs, ",")
 	// Load Balancing
 	// Now, select randomly
 	agentID := agentIDs[rand.Intn(len(agentIDs))]
@@ -248,7 +247,7 @@ func (s *server) startHTTP1(c HubConfig) {
 	go func() {
 		c.Logger.Info("Starting server...")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("ListenAndServe error: %v", err)
+			c.Logger.Fatal("ListenAndServe error: %v", zap.Error(err))
 		}
 	}()
 

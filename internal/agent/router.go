@@ -145,7 +145,6 @@ func (r *Router) Route(p *packets.Publish) {
 		r.logger.Error("Error serializing response packet", zap.Error(err))
 		return
 	}
-
 	_, err = r.client.Publish(context.Background(), &paho.Publish{
 		Topic:   responseTopic,
 		QoS:     0,

@@ -62,7 +62,7 @@ func TestSerializedRequestPacket(t *testing.T) {
 					Path:   "/",
 					Headers: &HTTPHeaders{
 						Headers: map[string]*HeaderValueList{
-							"Content-Type": &HeaderValueList{
+							"Content-Type": {
 								Values: []string{"application/json"},
 							},
 						},

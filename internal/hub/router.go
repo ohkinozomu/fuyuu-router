@@ -34,9 +34,17 @@ func (r *Router) Route(p *packets.Publish) {
 	}
 
 	err = r.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry([]byte(httpResponsePacket.RequestId), httpResponsePacket.GetHttpResponseData()).WithTTL(time.Minute * 5)
-		err = txn.SetEntry(e)
-		return err
+		e1 := badger.NewEntry([]byte(httpResponsePacket.RequestId), httpResponsePacket.GetHttpResponseData()).WithTTL(time.Minute * 5)
+		err = txn.SetEntry(e1)
+		if err != nil {
+			return err
+		}
+		e2 := badger.NewEntry([]byte("compress/"+httpResponsePacket.RequestId), []byte(httpResponsePacket.Compress)).WithTTL(time.Minute * 5)
+		err = txn.SetEntry(e2)
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		r.logger.Info("Error setting key in database: " + err.Error())

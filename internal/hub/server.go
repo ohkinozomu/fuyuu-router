@@ -30,6 +30,7 @@ type server struct {
 	logger         *zap.Logger
 	format         string
 	encoder        *zstd.Encoder
+	decoder        *zstd.Decoder
 }
 
 func newServer(c HubConfig) server {
@@ -65,8 +66,13 @@ func newServer(c HubConfig) server {
 	requestClient := paho.NewClient(requestClientConfig)
 
 	var encoder *zstd.Encoder
+	var decoder *zstd.Decoder
 	if c.CommonConfigV2.Networking.Compress == "zstd" {
 		encoder, err = zstd.NewWriter(nil)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		decoder, err = zstd.NewReader(nil)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}
@@ -79,6 +85,7 @@ func newServer(c HubConfig) server {
 		logger:         c.Logger,
 		format:         c.CommonConfigV2.Networking.Format,
 		encoder:        encoder,
+		decoder:        decoder,
 	}
 }
 
@@ -152,7 +159,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Body:    string(bodyBytes),
 	}
 
-	b, err := data.SerializeHTTPRequestData(&requestData, s.format)
+	b, err := data.SerializeHTTPRequestData(&requestData, s.format, s.encoder)
 	if err != nil {
 		s.logger.Error("Error serializing request data", zap.Error(err))
 		return
@@ -163,7 +170,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		HttpRequestData: b,
 	}
 
-	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.format, s.encoder)
+	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.format)
 	if err != nil {
 		s.logger.Error("Error serializing request packet", zap.Error(err))
 		return
@@ -183,7 +190,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	select {
 	case value := <-dataCh:
 		s.logger.Debug("Writing response...")
-		httpResponseData, err := data.DeserializeHTTPResponseData(value, s.format)
+		httpResponseData, err := data.DeserializeHTTPResponseData(value, s.format, s.decoder)
 		if err != nil {
 			s.logger.Error("Error deserializing response packet", zap.Error(err))
 			return

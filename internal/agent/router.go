@@ -102,14 +102,14 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 }
 
 func (r *Router) Route(p *packets.Publish) {
-	requestPacket, err := data.DeserializeRequestPacket(p.Payload, r.format, r.decoder)
+	requestPacket, err := data.DeserializeRequestPacket(p.Payload, r.format)
 	if err != nil {
 		r.logger.Error("Error deserializing request packet", zap.Error(err))
 		return
 	}
 
 	var responsePacket data.HTTPResponsePacket
-	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, r.format)
+	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, r.format, r.decoder)
 	if err != nil {
 		r.logger.Error("Error deserializing request data", zap.Error(err))
 		return
@@ -134,7 +134,7 @@ func (r *Router) Route(p *packets.Publish) {
 				Headers:    &protoHeaders,
 			}
 		}
-		b, err := data.SerializeHTTPResponseData(&responseData, r.format)
+		b, err := data.SerializeHTTPResponseData(&responseData, r.format, r.encoder)
 		if err != nil {
 			r.logger.Error("Error serializing response data", zap.Error(err))
 			return
@@ -150,7 +150,7 @@ func (r *Router) Route(p *packets.Publish) {
 
 	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestId)
 
-	responsePayload, err := data.SerializeResponsePacket(&responsePacket, r.format, r.encoder)
+	responsePayload, err := data.SerializeResponsePacket(&responsePacket, r.format)
 	if err != nil {
 		r.logger.Error("Error serializing response packet", zap.Error(err))
 		return

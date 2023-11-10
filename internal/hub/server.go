@@ -151,9 +151,16 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Headers: &dataHeaders,
 		Body:    string(bodyBytes),
 	}
+
+	b, err := data.SerializeHTTPRequestData(&requestData, s.format)
+	if err != nil {
+		s.logger.Error("Error serializing request data", zap.Error(err))
+		return
+	}
+
 	requestPacket := data.HTTPRequestPacket{
 		RequestId:       uuid,
-		HttpRequestData: &requestData,
+		HttpRequestData: b,
 	}
 
 	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.format, s.encoder)

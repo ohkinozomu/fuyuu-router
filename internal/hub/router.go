@@ -48,14 +48,8 @@ func (r *Router) Route(p *packets.Publish) {
 		return
 	}
 
-	httpResponseData, err := data.SerializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), r.format)
-	if err != nil {
-		r.logger.Info("Error serializing response packet: " + err.Error())
-		return
-	}
-
 	err = r.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry([]byte(httpResponsePacket.RequestId), httpResponseData).WithTTL(time.Minute * 5)
+		e := badger.NewEntry([]byte(httpResponsePacket.RequestId), httpResponsePacket.GetHttpResponseData()).WithTTL(time.Minute * 5)
 		err = txn.SetEntry(e)
 		return err
 	})

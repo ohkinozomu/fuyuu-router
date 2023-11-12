@@ -12,11 +12,16 @@ message HTTPHeaders {
     map<string, HeaderValueList> headers = 1;
 }
 
+message HTTPBody {
+    string body = 1;
+    string type = 2;
+}
+
 message HTTPRequestData {
     string method = 1;
     string path = 2;
     HTTPHeaders headers = 3;
-    string body = 4;
+    HTTPBody body = 4;
 }
 
 message HTTPRequestPacket {
@@ -26,7 +31,7 @@ message HTTPRequestPacket {
 }
 
 message HTTPResponseData {
-    string body = 1;
+    HTTPBody body = 1;
     int32 status_code = 2;
     HTTPHeaders headers = 3;
 }

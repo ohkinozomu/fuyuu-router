@@ -79,7 +79,7 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 	var responseHeader http.Header
 
 	url := "http://" + proxyHost + data.Path
-	body := bytes.NewBufferString(data.Body)
+	body := bytes.NewBufferString(data.Body.Body)
 	req, err := http.NewRequest(data.Method, url, body)
 	if err != nil {
 		return "", http.StatusInternalServerError, responseHeader, err
@@ -124,14 +124,20 @@ func (r *Router) Route(p *packets.Publish) {
 			r.logger.Error("Error sending HTTP request", zap.Error(err))
 			protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
 			responseData = data.HTTPResponseData{
-				Body:       err.Error(),
+				Body: &data.HTTPBody{
+					Body: err.Error(),
+					Type: "data",
+				},
 				StatusCode: http.StatusInternalServerError,
 				Headers:    &protoHeaders,
 			}
 		} else {
 			protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
 			responseData = data.HTTPResponseData{
-				Body:       httpResponse,
+				Body: &data.HTTPBody{
+					Body: httpResponse,
+					Type: "data",
+				},
 				StatusCode: int32(statusCode),
 				Headers:    &protoHeaders,
 			}

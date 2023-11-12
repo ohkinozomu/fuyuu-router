@@ -65,7 +65,10 @@ func TestSerializedRequestPacket(t *testing.T) {
 						},
 					},
 				},
-				Body: "test",
+				Body: &HTTPBody{
+					Body: "test",
+					Type: "data",
+				},
 			}
 			b, err := SerializeHTTPRequestData(&httpRequestData, testCase.format, testCase.encoder)
 			if err != nil {
@@ -89,7 +92,7 @@ func TestSerializedRequestPacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assert.Equal(t, httpRequestData.Body, deserializedHTTPRequestData.Body)
+			assert.Equal(t, httpRequestData.Body.Body, deserializedHTTPRequestData.Body.Body)
 			assert.Equal(t, httpRequestData.Method, deserializedHTTPRequestData.Method)
 			assert.Equal(t, httpRequestData.Path, deserializedHTTPRequestData.Path)
 			assert.Equal(t, httpRequestData.Headers.GetHeaders()["Content-Type"].GetValues(), deserializedHTTPRequestData.Headers.GetHeaders()["Content-Type"].GetValues())
@@ -151,7 +154,10 @@ func TestSerializedResponsePacket(t *testing.T) {
 			httpReponseData := HTTPResponseData{
 				StatusCode: 200,
 				Headers:    &headers,
-				Body:       "test",
+				Body: &HTTPBody{
+					Body: "test",
+					Type: "data",
+				},
 			}
 			b, err := SerializeHTTPResponseData(&httpReponseData, testCase.format, testCase.encoder)
 			if err != nil {
@@ -175,7 +181,7 @@ func TestSerializedResponsePacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assert.Equal(t, httpReponseData.Body, deserializedHTTPResponseData.Body)
+			assert.Equal(t, httpReponseData.Body.Body, deserializedHTTPResponseData.Body.Body)
 			assert.Equal(t, httpReponseData.StatusCode, deserializedHTTPResponseData.StatusCode)
 			assert.Equal(t, httpReponseData.Headers.GetHeaders()["Content-Type"].GetValues(), deserializedHTTPResponseData.Headers.GetHeaders()["Content-Type"].GetValues())
 			assert.Equal(t, httpResponsePacket.GetRequestId(), deserializedResponsePacket.GetRequestId())
@@ -235,7 +241,7 @@ func TestHTTPResponseDataSerialize(t *testing.T) {
 			httpResponseData := HTTPResponseData{
 				StatusCode: 200,
 				Headers:    &headers,
-				Body:       "test",
+				Body:       &HTTPBody{Body: "test", Type: "data"},
 			}
 
 			serializedResponseData, err := SerializeHTTPResponseData(&httpResponseData, testCase.format, testCase.encoder)
@@ -248,7 +254,7 @@ func TestHTTPResponseDataSerialize(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			assert.Equal(t, httpResponseData.Body, deserializedResponseData.Body)
+			assert.Equal(t, httpResponseData.Body.Body, deserializedResponseData.Body.Body)
 			assert.Equal(t, httpResponseData.StatusCode, deserializedResponseData.StatusCode)
 			assert.Equal(t, httpResponseData.Headers.GetHeaders()["Content-Type"].GetValues(), deserializedResponseData.Headers.GetHeaders()["Content-Type"].GetValues())
 		})

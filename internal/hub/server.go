@@ -163,7 +163,10 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Method:  r.Method,
 		Path:    r.URL.Path,
 		Headers: &dataHeaders,
-		Body:    string(bodyBytes),
+		Body: &data.HTTPBody{
+			Body: string(bodyBytes),
+			Type: "data",
+		},
 	}
 
 	b, err := data.SerializeHTTPRequestData(&requestData, s.format, s.encoder)
@@ -224,7 +227,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		if value != nil {
 			w.WriteHeader(int(httpResponseData.StatusCode))
-			w.Write([]byte(httpResponseData.Body))
+			w.Write([]byte(httpResponseData.Body.Body))
 		}
 	case <-ctx.Done():
 		s.logger.Debug("Request timed out...")

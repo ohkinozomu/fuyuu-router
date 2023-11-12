@@ -16,16 +16,15 @@ import (
 )
 
 type Router struct {
-	messageChan chan string
-	client      *paho.Client
-	id          string
-	proxyHost   string
-	logger      *zap.Logger
-	protocol    string
-	format      string
-	encoder     *zstd.Encoder
-	decoder     *zstd.Decoder
-	compress    string
+	messageChan  chan string
+	client       *paho.Client
+	id           string
+	proxyHost    string
+	logger       *zap.Logger
+	protocol     string
+	encoder      *zstd.Encoder
+	decoder      *zstd.Decoder
+	commonConfig common.CommonConfigV2
 }
 
 var _ paho.Router = (*Router)(nil)
@@ -62,16 +61,15 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 	}
 
 	return &Router{
-		messageChan: messageChan,
-		client:      client,
-		id:          c.ID,
-		proxyHost:   c.ProxyHost,
-		logger:      c.Logger,
-		protocol:    c.Protocol,
-		format:      c.CommonConfigV2.Networking.Format,
-		encoder:     encoder,
-		decoder:     decoder,
-		compress:    c.CommonConfigV2.Networking.Compress,
+		messageChan:  messageChan,
+		client:       client,
+		id:           c.ID,
+		proxyHost:    c.ProxyHost,
+		logger:       c.Logger,
+		protocol:     c.Protocol,
+		encoder:      encoder,
+		decoder:      decoder,
+		commonConfig: c.CommonConfigV2,
 	}
 }
 
@@ -104,14 +102,14 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 }
 
 func (r *Router) Route(p *packets.Publish) {
-	requestPacket, err := data.DeserializeRequestPacket(p.Payload, r.format)
+	requestPacket, err := data.DeserializeRequestPacket(p.Payload, r.commonConfig.Networking.Format)
 	if err != nil {
 		r.logger.Error("Error deserializing request packet", zap.Error(err))
 		return
 	}
 
 	var responsePacket data.HTTPResponsePacket
-	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, requestPacket.Compress, r.format, r.decoder)
+	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, requestPacket.Compress, r.commonConfig.Networking.Format, r.decoder)
 	if err != nil {
 		r.logger.Error("Error deserializing request data", zap.Error(err))
 		return
@@ -142,7 +140,7 @@ func (r *Router) Route(p *packets.Publish) {
 				Headers:    &protoHeaders,
 			}
 		}
-		b, err := data.SerializeHTTPResponseData(&responseData, r.format, r.encoder)
+		b, err := data.SerializeHTTPResponseData(&responseData, r.commonConfig.Networking.Format, r.encoder)
 		if err != nil {
 			r.logger.Error("Error serializing response data", zap.Error(err))
 			return
@@ -150,7 +148,7 @@ func (r *Router) Route(p *packets.Publish) {
 		responsePacket = data.HTTPResponsePacket{
 			RequestId:        requestPacket.RequestId,
 			HttpResponseData: b,
-			Compress:         r.compress,
+			Compress:         r.commonConfig.Networking.Compress,
 		}
 	} else {
 		r.logger.Error("Unknown protocol: " + r.protocol)
@@ -159,7 +157,7 @@ func (r *Router) Route(p *packets.Publish) {
 
 	responseTopic := topics.ResponseTopic(r.id, requestPacket.RequestId)
 
-	responsePayload, err := data.SerializeResponsePacket(&responsePacket, r.format)
+	responsePayload, err := data.SerializeResponsePacket(&responsePacket, r.commonConfig.Networking.Format)
 	if err != nil {
 		r.logger.Error("Error serializing response packet", zap.Error(err))
 		return

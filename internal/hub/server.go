@@ -28,10 +28,9 @@ type server struct {
 	responseClient *paho.Client
 	db             *badger.DB
 	logger         *zap.Logger
-	format         string
 	encoder        *zstd.Encoder
 	decoder        *zstd.Decoder
-	compress       string
+	commonConfig   common.CommonConfigV2
 }
 
 func newServer(c HubConfig) server {
@@ -50,7 +49,7 @@ func newServer(c HubConfig) server {
 	}
 	responseClientConfig := paho.ClientConfig{
 		Conn:   responseConn,
-		Router: NewRouter(db, c.Logger, c.CommonConfigV2.Networking.Format, c.CommonConfigV2.Networking.Compress),
+		Router: NewRouter(db, c.Logger, c.CommonConfigV2),
 	}
 	responseClient := paho.NewClient(responseClientConfig)
 
@@ -84,16 +83,10 @@ func newServer(c HubConfig) server {
 		responseClient: responseClient,
 		db:             db,
 		logger:         c.Logger,
-		format:         c.CommonConfigV2.Networking.Format,
 		encoder:        encoder,
 		decoder:        decoder,
-		compress:       c.CommonConfigV2.Networking.Compress,
+		commonConfig:   c.CommonConfigV2,
 	}
-}
-
-type httpReponseData struct {
-	data     []byte
-	compress string
 }
 
 func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -169,7 +162,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	b, err := data.SerializeHTTPRequestData(&requestData, s.format, s.encoder)
+	b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format, s.encoder)
 	if err != nil {
 		s.logger.Error("Error serializing request data", zap.Error(err))
 		return
@@ -178,10 +171,10 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	requestPacket := data.HTTPRequestPacket{
 		RequestId:       uuid,
 		HttpRequestData: b,
-		Compress:        s.compress,
+		Compress:        s.commonConfig.Networking.Compress,
 	}
 
-	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.format)
+	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
 	if err != nil {
 		s.logger.Error("Error serializing request packet", zap.Error(err))
 		return
@@ -220,7 +213,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("Error getting compress value from database", zap.Error(err))
 			return
 		}
-		httpResponseData, err := data.DeserializeHTTPResponseData(value, compress, s.format, s.decoder)
+		httpResponseData, err := data.DeserializeHTTPResponseData(value, compress, s.commonConfig.Networking.Format, s.decoder)
 		if err != nil {
 			s.logger.Error("Error deserializing response data", zap.Error(err))
 			return

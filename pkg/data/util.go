@@ -1,11 +1,14 @@
 package data
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/thanos-io/objstore"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -101,7 +104,7 @@ func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string, e
 	return b, nil
 }
 
-func DeserializeHTTPRequestData(b []byte, compress string, format string, decoder *zstd.Decoder) (*HTTPRequestData, error) {
+func DeserializeHTTPRequestData(b []byte, compress string, format string, decoder *zstd.Decoder, bucket objstore.Bucket) (*HTTPRequestData, error) {
 	var err error
 	if compress == "zstd" && decoder != nil {
 		b, err = decoder.DecodeAll(b, nil)
@@ -122,6 +125,25 @@ func DeserializeHTTPRequestData(b []byte, compress string, format string, decode
 	} else {
 		return nil, fmt.Errorf("unknown format: %v", format)
 	}
+
+	if httpRequestData.Body.Type == "storage_relay" {
+		rc, err := bucket.Get(context.Background(), httpRequestData.Body.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return nil, err
+		}
+
+		err = rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		httpRequestData.Body.Body = string(data)
+	}
+
 	return &httpRequestData, nil
 }
 
@@ -147,7 +169,7 @@ func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string
 	return b, nil
 }
 
-func DeserializeHTTPResponseData(b []byte, compress string, format string, decoder *zstd.Decoder) (*HTTPResponseData, error) {
+func DeserializeHTTPResponseData(b []byte, compress string, format string, decoder *zstd.Decoder, bucket objstore.Bucket) (*HTTPResponseData, error) {
 	var err error
 	if compress == "zstd" && decoder != nil {
 		b, err = decoder.DecodeAll(b, nil)
@@ -167,5 +189,24 @@ func DeserializeHTTPResponseData(b []byte, compress string, format string, decod
 	} else {
 		return nil, fmt.Errorf("unknown format: %v", format)
 	}
+
+	if httpResponseData.Body.Type == "storage_relay" {
+		rc, err := bucket.Get(context.Background(), httpResponseData.Body.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return nil, err
+		}
+
+		err = rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		httpResponseData.Body.Body = string(data)
+	}
+
 	return &httpResponseData, nil
 }

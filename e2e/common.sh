@@ -5,6 +5,7 @@ set -eux
 TEST_SCRIPT=""
 WAIT_SCRIPT=""
 MANIFEST_DIR=""
+KIND_CONFIG=""
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -17,6 +18,9 @@ while [[ "$#" -gt 0 ]]; do
         --wait_script=*)
             WAIT_SCRIPT="${1#*=}"
             ;;
+        --kind_config=*)
+            KIND_CONFIG="${1#*=}"
+            ;;
         *)
             echo "Unknown parameter passed: $1"
             exit 1
@@ -26,7 +30,11 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 create_cluster() {
-    kind create cluster --name fuyuu-test-cluster
+    if [ -n "$KIND_CONFIG" ]; then
+        kind create cluster --name fuyuu-test-cluster --config "$KIND_CONFIG"
+    else
+        kind create cluster --name fuyuu-test-cluster
+    fi
     kubectl create namespace fuyuu-router
     kubectl create namespace nanomq
 }

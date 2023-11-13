@@ -20,6 +20,8 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
+	"github.com/thanos-io/objstore"
+	objstoreclient "github.com/thanos-io/objstore/client"
 	"go.uber.org/zap"
 )
 
@@ -31,11 +33,12 @@ type server struct {
 	encoder        *zstd.Encoder
 	decoder        *zstd.Decoder
 	commonConfig   common.CommonConfigV2
+	bucket         objstore.Bucket
 }
 
 func newServer(c HubConfig) server {
 	c.Logger.Debug("Opening database...")
-	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true).WithLogger(newZapToBadgerAdapter(c.Logger)))
+	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true).WithLogger(common.NewZapToBadgerAdapter(c.Logger)))
 	if err != nil {
 		c.Logger.Fatal("Error opening database: " + err.Error())
 	}
@@ -78,6 +81,18 @@ func newServer(c HubConfig) server {
 		}
 	}
 
+	var bucket objstore.Bucket
+	if c.CommonConfigV2.Networking.LargeDataPolicy == "storage_relay" {
+		objstoreConf, err := os.ReadFile(c.CommonConfigV2.StorageRelay.ObjstoreFile)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		bucket, err = objstoreclient.NewBucket(common.NewZapToGoKitAdapter(c.Logger), objstoreConf, "fuyuu-router-hub")
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	}
+
 	return server{
 		requestClient:  requestClient,
 		responseClient: responseClient,
@@ -86,11 +101,13 @@ func newServer(c HubConfig) server {
 		encoder:        encoder,
 		decoder:        decoder,
 		commonConfig:   c.CommonConfigV2,
+		bucket:         bucket,
 	}
 }
 
 func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.logger.Debug("Handling request...")
+
 	fuyuuRouterIDs := r.Header.Get("FuyuuRouter-IDs")
 	if fuyuuRouterIDs == "" {
 		w.Write([]byte("FuyuuRouter-IDs header is required"))
@@ -111,6 +128,18 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	uuid := uuid.New().String()
+
+	var objectName string
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
+		objectName = agentID + "/" + uuid + "/request"
+		s.logger.Debug("Uploading object to object storage...")
+		err := s.bucket.Upload(context.Background(), objectName, r.Body)
+		if err != nil {
+			s.logger.Error("Error uploading object to object storage", zap.Error(err))
+			return
+		}
+	}
+
 	topic := topics.ResponseTopic(agentID, uuid)
 
 	s.logger.Debug("Subscribing to response topic...")
@@ -152,14 +181,24 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	dataHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
 
+	var body data.HTTPBody
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
+		body = data.HTTPBody{
+			Body: objectName,
+			Type: "storage_relay",
+		}
+	} else {
+		body = data.HTTPBody{
+			Body: string(bodyBytes),
+			Type: "data",
+		}
+	}
+
 	requestData := data.HTTPRequestData{
 		Method:  r.Method,
 		Path:    r.URL.Path,
 		Headers: &dataHeaders,
-		Body: &data.HTTPBody{
-			Body: string(bodyBytes),
-			Type: "data",
-		},
+		Body:    &body,
 	}
 
 	b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format, s.encoder)
@@ -213,7 +252,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("Error getting compress value from database", zap.Error(err))
 			return
 		}
-		httpResponseData, err := data.DeserializeHTTPResponseData(value, compress, s.commonConfig.Networking.Format, s.decoder)
+		httpResponseData, err := data.DeserializeHTTPResponseData(value, compress, s.commonConfig.Networking.Format, s.decoder, s.bucket)
 		if err != nil {
 			s.logger.Error("Error deserializing response data", zap.Error(err))
 			return

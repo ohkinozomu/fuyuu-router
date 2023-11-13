@@ -40,6 +40,40 @@ Agents publish a message to the `fuyuu-router/launch` topic when they launch and
 
 Users can subscribe to these topics to create a mechanism, for example, to update Istio VirtualServices.
 
+## large data policy
+
+While many MQTT brokers have payload size limitations, there is a desire to send large HTTP request/response.
+
+fuyuu-router accomplishes this by allowing the hub and agent to transparently communicate with each other through object storage only when the HTTP request/response is large.
+
+This function is called "storage relay".
+
+fuyuu-router uses [objstore](https://github.com/thanos-io/objstore), and its configuration file is needed.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example
+data:
+  config.toml: |
+    [networking]
+    format = "json"
+    large_data_policy = "storage_relay"
+    [storage_relay]
+    objstore_file = "/app/config/objstore.yaml"
+    threshold_bytes = 128000
+  objstore.yaml: |
+    type: S3
+    config:
+      bucket: "example-bucket"
+      endpoint: "s3.amazonaws.com"
+      access_key: "<ACCESS_KEY>"
+      secret_key: "<SECRET_KEY>"
+```
+
+The hub and agent must reference the same bucket and have appropriate permissions to it.
+
 ## limitation
 
 - Currently only HTTP 1.1 is supported. Perhaps HTTP2 is the next roadmap.

@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuyuu-router-agent
+  namespace: fuyuu-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuyuu-router-agent
+  template:
+    metadata:
+      labels:
+        app: fuyuu-router-agent
+    spec:
+      containers:
+      - name: fuyuu-router-agent
+        image: fuyuu-router:dev
+        volumeMounts:
+        - name: fuyuu-router-agent-config
+          mountPath: /app/config
+        - name: objstore
+          mountPath: /tmp/objstore
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b nanomq.nanomq:1883 --proxy-host 127.0.0.1:8000 --loglevel debug
+      - name: appserver
+        image: golang:1.21.3
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo 'package main; import ("net/http"; "fmt"); func main() { http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, "ok") }); http.ListenAndServe(":8000", nil) }' > server.go && go run server.go
+        ports:
+        - containerPort: 8000
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 5
+      volumes:
+      - name: fuyuu-router-agent-config
+        configMap:
+          name: fuyuu-router-agent-config
+      - name: objstore
+        hostPath:
+          path: /tmp/objstore
+          type: Directory
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuyuu-router-agent-config
+  namespace: fuyuu-router
+data:
+  config.toml: |
+    [networking]
+    format = "json"
+    large_data_policy = "storage_relay"
+    [storage_relay]
+    objstore_file = "/app/config/objstore.yaml"
+  objstore.yaml: |
+    type: FILESYSTEM
+    config:
+      directory: "/tmp/objstore"

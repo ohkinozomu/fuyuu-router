@@ -88,7 +88,7 @@ func TestSerializedRequestPacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			deserializedHTTPRequestData, err := DeserializeHTTPRequestData(deserializedRequestPacket.GetHttpRequestData(), deserializedRequestPacket.Compress, testCase.format, decoder)
+			deserializedHTTPRequestData, err := DeserializeHTTPRequestData(deserializedRequestPacket.GetHttpRequestData(), deserializedRequestPacket.Compress, testCase.format, decoder, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -177,7 +177,7 @@ func TestSerializedResponsePacket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			deserializedHTTPResponseData, err := DeserializeHTTPResponseData(deserializedResponsePacket.GetHttpResponseData(), testCase.compress, testCase.format, testCase.decoder)
+			deserializedHTTPResponseData, err := DeserializeHTTPResponseData(deserializedResponsePacket.GetHttpResponseData(), testCase.compress, testCase.format, testCase.decoder, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -249,7 +249,7 @@ func TestHTTPResponseDataSerialize(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			deserializedResponseData, err := DeserializeHTTPResponseData(serializedResponseData, testCase.compress, testCase.format, testCase.decoder)
+			deserializedResponseData, err := DeserializeHTTPResponseData(serializedResponseData, testCase.compress, testCase.format, testCase.decoder, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

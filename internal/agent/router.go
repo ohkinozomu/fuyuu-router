@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/eclipse/paho.golang/packets"
@@ -12,6 +14,8 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
+	"github.com/thanos-io/objstore"
+	objstoreclient "github.com/thanos-io/objstore/client"
 	"go.uber.org/zap"
 )
 
@@ -25,6 +29,7 @@ type Router struct {
 	encoder      *zstd.Encoder
 	decoder      *zstd.Decoder
 	commonConfig common.CommonConfigV2
+	bucket       objstore.Bucket
 }
 
 var _ paho.Router = (*Router)(nil)
@@ -60,6 +65,18 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 		}
 	}
 
+	var bucket objstore.Bucket
+	if c.CommonConfigV2.Networking.LargeDataPolicy == "storage_relay" {
+		objstoreConf, err := os.ReadFile(c.CommonConfigV2.StorageRelay.ObjstoreFile)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		bucket, err = objstoreclient.NewBucket(common.NewZapToGoKitAdapter(c.Logger), objstoreConf, "fuyuu-router-hub")
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	}
+
 	return &Router{
 		messageChan:  messageChan,
 		client:       client,
@@ -70,6 +87,7 @@ func NewRouter(messageChan chan string, c AgentConfig) *Router {
 		encoder:      encoder,
 		decoder:      decoder,
 		commonConfig: c.CommonConfigV2,
+		bucket:       bucket,
 	}
 }
 
@@ -109,7 +127,7 @@ func (r *Router) Route(p *packets.Publish) {
 	}
 
 	var responsePacket data.HTTPResponsePacket
-	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, requestPacket.Compress, r.commonConfig.Networking.Format, r.decoder)
+	httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, requestPacket.Compress, r.commonConfig.Networking.Format, r.decoder, r.bucket)
 	if err != nil {
 		r.logger.Error("Error deserializing request data", zap.Error(err))
 		return
@@ -117,10 +135,12 @@ func (r *Router) Route(p *packets.Publish) {
 
 	if r.protocol == "http1" {
 		var responseData data.HTTPResponseData
+		var objectName string
 		httpResponse, statusCode, responseHeader, err := sendHTTP1Request(r.proxyHost, httpRequestData)
 		if err != nil {
 			r.logger.Error("Error sending HTTP request", zap.Error(err))
 			protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
+			// For now, not apply the storage relay to the error
 			responseData = data.HTTPResponseData{
 				Body: &data.HTTPBody{
 					Body: err.Error(),
@@ -130,12 +150,31 @@ func (r *Router) Route(p *packets.Publish) {
 				Headers:    &protoHeaders,
 			}
 		} else {
+			if r.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > r.commonConfig.StorageRelay.ThresholdBytes {
+				objectName = r.id + "/" + requestPacket.RequestId + "/response"
+				err := r.bucket.Upload(context.Background(), objectName, strings.NewReader(httpResponse))
+				if err != nil {
+					r.logger.Error("Error uploading object to object storage", zap.Error(err))
+					return
+				}
+			}
 			protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
-			responseData = data.HTTPResponseData{
-				Body: &data.HTTPBody{
+
+			var body data.HTTPBody
+			if r.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > r.commonConfig.StorageRelay.ThresholdBytes {
+				body = data.HTTPBody{
+					Body: objectName,
+					Type: "storage_relay",
+				}
+			} else {
+				body = data.HTTPBody{
 					Body: httpResponse,
 					Type: "data",
-				},
+				}
+			}
+
+			responseData = data.HTTPResponseData{
+				Body:       &body,
 				StatusCode: int32(statusCode),
 				Headers:    &protoHeaders,
 			}

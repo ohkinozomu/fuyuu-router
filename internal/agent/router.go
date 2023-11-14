@@ -7,15 +7,17 @@ import (
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
+	"go.uber.org/zap"
 )
 
 type Router struct {
 	payloadCh chan []byte
+	logger    *zap.Logger
 }
 
 var _ paho.Router = (*Router)(nil)
 
-func NewRouter(payloadCh chan []byte, c AgentConfig) *Router {
+func NewRouter(payloadCh chan []byte, c AgentConfig, logger *zap.Logger) *Router {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	conn, err := common.TCPConnect(ctx, c.CommonConfig)
@@ -34,10 +36,12 @@ func NewRouter(payloadCh chan []byte, c AgentConfig) *Router {
 
 	return &Router{
 		payloadCh: payloadCh,
+		logger:    logger,
 	}
 }
 
 func (r *Router) Route(p *packets.Publish) {
+	r.logger.Debug("Received message")
 	r.payloadCh <- p.Payload
 }
 

@@ -1,0 +1,15 @@
+name: e2e-split
+on: push
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '^1.21.1'
+      - name: Run test
+        run: ./e2e/common.sh --manifest_dir=./e2e/split/manifests  --run_test=./e2e/split/run_test.sh --kind_config=./e2e/split/kind-config.yaml

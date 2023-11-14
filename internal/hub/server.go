@@ -25,6 +25,16 @@ import (
 	"go.uber.org/zap"
 )
 
+type mergeChPayload struct {
+	responsePacket   *data.HTTPResponsePacket
+	httpResponseData *data.HTTPResponseData
+}
+
+type updateDBChPayload struct {
+	responsePacket   *data.HTTPResponsePacket
+	httpResponseData *data.HTTPResponseData
+}
+
 type server struct {
 	requestClient  *paho.Client
 	responseClient *paho.Client
@@ -34,6 +44,10 @@ type server struct {
 	decoder        *zstd.Decoder
 	commonConfig   common.CommonConfigV2
 	bucket         objstore.Bucket
+	merger         *data.Merger
+	dataCh         chan []byte
+	mergeCh        chan mergeChPayload
+	updateDBCh     chan updateDBChPayload
 }
 
 func newServer(c HubConfig) server {
@@ -50,9 +64,26 @@ func newServer(c HubConfig) server {
 	if err != nil {
 		c.Logger.Fatal("Error: " + err.Error())
 	}
+
+	var encoder *zstd.Encoder
+	var decoder *zstd.Decoder
+	if c.CommonConfigV2.Networking.Compress == "zstd" {
+		encoder, err = zstd.NewWriter(nil)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		decoder, err = zstd.NewReader(nil)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	}
+
+	dataCh := make(chan []byte)
+	mergeCh := make(chan mergeChPayload)
+	updateDBCh := make(chan updateDBChPayload)
 	responseClientConfig := paho.ClientConfig{
 		Conn:   responseConn,
-		Router: NewRouter(db, c.Logger, c.CommonConfigV2),
+		Router: NewRouter(db, c.Logger, c.CommonConfigV2, encoder, decoder, mergeCh, updateDBCh),
 	}
 	responseClient := paho.NewClient(responseClientConfig)
 
@@ -67,19 +98,6 @@ func newServer(c HubConfig) server {
 		Conn: requestConn,
 	}
 	requestClient := paho.NewClient(requestClientConfig)
-
-	var encoder *zstd.Encoder
-	var decoder *zstd.Decoder
-	if c.CommonConfigV2.Networking.Compress == "zstd" {
-		encoder, err = zstd.NewWriter(nil)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-		decoder, err = zstd.NewReader(nil)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-	}
 
 	var bucket objstore.Bucket
 	if c.CommonConfigV2.Networking.LargeDataPolicy == "storage_relay" {
@@ -102,6 +120,10 @@ func newServer(c HubConfig) server {
 		decoder:        decoder,
 		commonConfig:   c.CommonConfigV2,
 		bucket:         bucket,
+		merger:         data.NewMerger(),
+		dataCh:         dataCh,
+		mergeCh:        mergeCh,
+		updateDBCh:     updateDBCh,
 	}
 }
 
@@ -118,7 +140,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Now, select randomly
 	agentID := agentIDs[rand.Intn(len(agentIDs))]
 
-	timeoutDuration := 30 * time.Second
+	timeoutDuration := 60 * time.Second
 	ctx, cancel := context.WithTimeout(r.Context(), timeoutDuration)
 	defer cancel()
 
@@ -160,12 +182,10 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	match := pb.Match{Prefix: []byte(uuid), IgnoreBytes: ""}
 
-	dataCh := make(chan []byte)
-
 	go func() {
 		err := s.db.Subscribe(ctx, func(kvs *pb.KVList) error {
 			s.logger.Debug("Received data from database...")
-			dataCh <- kvs.Kv[0].GetValue()
+			s.dataCh <- kvs.Kv[0].GetValue()
 			return nil
 		}, []pb.Match{match})
 		if err != nil {
@@ -173,7 +193,6 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				s.logger.Info("Error subscribing to database: " + err.Error())
 			}
 		}
-		close(dataCh)
 	}()
 
 	bodyBytes := make([]byte, r.ContentLength)
@@ -182,56 +201,122 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	dataHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
 
 	var body data.HTTPBody
-	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
-		body = data.HTTPBody{
-			Body: objectName,
-			Type: "storage_relay",
+
+	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
+		var chunks [][]byte
+		for i := 0; i < len(bodyBytes); i += s.commonConfig.Split.ChunkBytes {
+			end := i + s.commonConfig.Split.ChunkBytes
+			if end > len(bodyBytes) {
+				end = len(bodyBytes)
+			}
+			chunks = append(chunks, bodyBytes[i:end])
+		}
+
+		for sequence, c := range chunks {
+			httpBodyChunk := data.HTTPBodyChunk{
+				RequestId: uuid,
+				Total:     int32(len(chunks)),
+				Sequence:  int32(sequence + 1),
+				Data:      c,
+			}
+			b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
+			if err != nil {
+				s.logger.Error("Error serializing body chunk", zap.Error(err))
+				return
+			}
+
+			body = data.HTTPBody{
+				Body: b,
+				Type: "split",
+			}
+			requestData := data.HTTPRequestData{
+				Method:  r.Method,
+				Path:    r.URL.Path,
+				Headers: &dataHeaders,
+				Body:    &body,
+			}
+
+			b, err = data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format, s.encoder)
+			if err != nil {
+				s.logger.Error("Error serializing request data", zap.Error(err))
+				return
+			}
+
+			requestPacket := data.HTTPRequestPacket{
+				RequestId:       uuid,
+				HttpRequestData: b,
+				Compress:        s.commonConfig.Networking.Compress,
+			}
+
+			requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
+			if err != nil {
+				s.logger.Error("Error serializing request packet", zap.Error(err))
+				return
+			}
+
+			requestTopic := topics.RequestTopic(agentID)
+			s.logger.Debug("Publishing request...")
+			_, err = s.requestClient.Publish(context.Background(), &paho.Publish{
+				Payload: requestPayload,
+				Topic:   requestTopic,
+			})
+			if err != nil {
+				s.logger.Error("Error publishing request", zap.Error(err))
+				return
+			}
 		}
 	} else {
-		body = data.HTTPBody{
-			Body: string(bodyBytes),
-			Type: "data",
+		if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
+			body = data.HTTPBody{
+				Body: []byte(objectName),
+				Type: "storage_relay",
+			}
+		} else {
+			body = data.HTTPBody{
+				Body: bodyBytes,
+				Type: "data",
+			}
 		}
-	}
+		requestData := data.HTTPRequestData{
+			Method:  r.Method,
+			Path:    r.URL.Path,
+			Headers: &dataHeaders,
+			Body:    &body,
+		}
 
-	requestData := data.HTTPRequestData{
-		Method:  r.Method,
-		Path:    r.URL.Path,
-		Headers: &dataHeaders,
-		Body:    &body,
-	}
+		b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format, s.encoder)
+		if err != nil {
+			s.logger.Error("Error serializing request data", zap.Error(err))
+			return
+		}
 
-	b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format, s.encoder)
-	if err != nil {
-		s.logger.Error("Error serializing request data", zap.Error(err))
-		return
-	}
+		requestPacket := data.HTTPRequestPacket{
+			RequestId:       uuid,
+			HttpRequestData: b,
+			Compress:        s.commonConfig.Networking.Compress,
+		}
 
-	requestPacket := data.HTTPRequestPacket{
-		RequestId:       uuid,
-		HttpRequestData: b,
-		Compress:        s.commonConfig.Networking.Compress,
-	}
+		requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
+		if err != nil {
+			s.logger.Error("Error serializing request packet", zap.Error(err))
+			return
+		}
 
-	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
-	if err != nil {
-		s.logger.Error("Error serializing request packet", zap.Error(err))
-		return
-	}
-
-	requestTopic := topics.RequestTopic(agentID)
-	s.logger.Debug("Publishing request...")
-	_, err = s.requestClient.Publish(context.Background(), &paho.Publish{
-		Payload: requestPayload,
-		Topic:   requestTopic,
-	})
-	if err != nil {
-		s.logger.Error("Error publishing request", zap.Error(err))
-		return
+		requestTopic := topics.RequestTopic(agentID)
+		s.logger.Debug("Publishing request...")
+		_, err = s.requestClient.Publish(context.Background(), &paho.Publish{
+			Payload: requestPayload,
+			Topic:   requestTopic,
+		})
+		if err != nil {
+			s.logger.Error("Error publishing request", zap.Error(err))
+			return
+		}
+		s.logger.Debug("Subscribing to response topic...")
 	}
 
 	select {
-	case value := <-dataCh:
+	case value := <-s.dataCh:
 		s.logger.Debug("Writing response...")
 		var compress string
 		err := s.db.View(func(txn *badger.Txn) error {
@@ -327,6 +412,49 @@ func (s *server) startHTTP1(c HubConfig) {
 		}
 	}()
 
+	go func() {
+		for {
+			select {
+			case mergeChPayload := <-s.mergeCh:
+				chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpResponseData.Body.Body, s.commonConfig.Networking.Format)
+				if err != nil {
+					s.logger.Error("Error deserializing HTTP body chunk", zap.Error(err))
+					return
+				}
+				s.merger.AddChunk(chunk)
+
+				if s.merger.IsComplete(chunk) {
+					combined := s.merger.GetCombinedData(chunk)
+					mergeChPayload.httpResponseData.Body.Body = combined
+					updateDBChPayload := updateDBChPayload{
+						responsePacket:   mergeChPayload.responsePacket,
+						httpResponseData: mergeChPayload.httpResponseData,
+					}
+					s.updateDBCh <- updateDBChPayload
+				}
+			case updateDBChPayload := <-s.updateDBCh:
+				s.logger.Debug("Writing response to database...")
+				err := s.db.Update(func(txn *badger.Txn) error {
+					e1 := badger.NewEntry([]byte(updateDBChPayload.responsePacket.RequestId), updateDBChPayload.responsePacket.GetHttpResponseData()).WithTTL(time.Minute * 5)
+					err := txn.SetEntry(e1)
+					if err != nil {
+						return err
+					}
+					e2 := badger.NewEntry([]byte("compress/"+updateDBChPayload.responsePacket.RequestId), []byte(updateDBChPayload.responsePacket.Compress)).WithTTL(time.Minute * 5)
+					err = txn.SetEntry(e2)
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					s.logger.Info("Error setting key in database: " + err.Error())
+					return
+				}
+			}
+		}
+	}()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
@@ -335,9 +463,20 @@ func (s *server) startHTTP1(c HubConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	s.requestClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
-	s.responseClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
-	s.db.Close()
+	err := s.requestClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
+	if err != nil {
+		c.Logger.Fatal("Error disconnecting from MQTT broker: " + err.Error())
+	}
+	err = s.responseClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
+	if err != nil {
+		c.Logger.Fatal("Error disconnecting from MQTT broker: " + err.Error())
+	}
+	err = s.db.Close()
+	if err != nil {
+		c.Logger.Fatal("Error closing database: " + err.Error())
+	}
+	close(s.dataCh)
+	close(s.mergeCh)
 
 	if err := srv.Shutdown(ctx); err != nil {
 		c.Logger.Fatal(fmt.Sprintf("shutting down error: %v", err))

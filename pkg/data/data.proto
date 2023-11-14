@@ -12,8 +12,15 @@ message HTTPHeaders {
     map<string, HeaderValueList> headers = 1;
 }
 
+message HTTPBodyChunk {
+    string request_id = 1;
+    int32 sequence = 2;
+    bytes data = 3;
+    int32 total = 4;
+}
+
 message HTTPBody {
-    string body = 1;
+    bytes body = 1;
     string type = 2;
 }
 

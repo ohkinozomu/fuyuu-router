@@ -27,7 +27,7 @@ type Profiling struct {
 type Networking struct {
 	Format          string `mapstructure:"format" validate:"omitempty,oneof=json protobuf"`
 	Compress        string `mapstructure:"compress" validate:"omitempty,oneof=none zstd"`
-	LargeDataPolicy string `mapstructure:"large_data_policy" validate:"omitempty,oneof=none storage_relay"`
+	LargeDataPolicy string `mapstructure:"large_data_policy" validate:"omitempty,oneof=none storage_relay split"`
 }
 
 type StorageRelay struct {
@@ -35,10 +35,15 @@ type StorageRelay struct {
 	ObjstoreFile   string `mapstructure:"objstore_file"`
 }
 
+type Split struct {
+	ChunkBytes int `mapstructure:"chunk_bytes"`
+}
+
 type CommonConfigV2 struct {
 	Profiling    Profiling    `mapstructure:"profiling"`
 	Networking   Networking   `mapstructure:"networking"`
 	StorageRelay StorageRelay `mapstructure:"storage_relay"`
+	Split        Split        `mapstructure:"split"`
 }
 
 func CreateConfig(configPath string) (CommonConfigV2, error) {
@@ -48,6 +53,7 @@ func CreateConfig(configPath string) (CommonConfigV2, error) {
 	viper.SetDefault("networking.compress", "none")
 	viper.SetDefault("networking.large_data_policy", "none")
 	// based on AWS IoT Core's limit: https://docs.aws.amazon.com/general/latest/gr/iot-core.html#message-broker-limits
+	viper.SetDefault("split.threshold_bytes", 128000)
 	viper.SetDefault("storage_relay.threshold_bytes", 128000)
 	viper.SetConfigFile(configPath)
 

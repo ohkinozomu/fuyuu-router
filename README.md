@@ -44,9 +44,30 @@ Users can subscribe to these topics to create a mechanism, for example, to updat
 
 While many MQTT brokers have payload size limitations, there is a desire to send large HTTP request/response.
 
-fuyuu-router accomplishes this by allowing the hub and agent to transparently communicate with each other through object storage only when the HTTP request/response is large.
+The fuyuu-router addresses this with two policies - 1) split and 2) storage relay.
 
-This function is called "storage relay".
+### split
+
+The fuyuu-router can bypass payload size limitations by splitting large HTTP requests/responses into multiple chunks and then combining them.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example
+data:
+  config.toml: |
+    [networking]
+    format = "json"
+    large_data_policy = "split"
+
+    [split]
+    chunk_bytes = 128000
+```
+
+### storage relay
+
+fuyuu-router allows the hub and agent to transparently communicate with each other through object storage only when the HTTP request/response is large.
 
 fuyuu-router uses [objstore](https://github.com/thanos-io/objstore), and its configuration file is needed.
 

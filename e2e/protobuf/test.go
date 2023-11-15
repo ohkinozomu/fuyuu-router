@@ -35,7 +35,7 @@ func main() {
 		go func(i int) {
 			defer wg.Done()
 
-			jsonData := map[string]interface{}{
+			jsonData := map[string]any{
 				"message": fmt.Sprintf("This is request %d", i),
 			}
 			jsonBytes, err := json.Marshal(jsonData)
@@ -47,7 +47,7 @@ func main() {
 			response, err := exec.Command("kubectl", "exec", "-n", namespace, podName, "--",
 				"curl", "-X", "POST", "-H", "FuyuuRouter-IDs: agent01", "-H", contentType, "-d", string(jsonBytes), routerURL, "-s").Output()
 
-			var responseJSON map[string]interface{}
+			var responseJSON map[string]any
 			if err := json.Unmarshal(response, &responseJSON); err != nil {
 				errors <- fmt.Sprintf("Failed to unmarshal JSON response: %s\nResponse: %s", err, response)
 				return
@@ -70,10 +70,9 @@ func main() {
 		errorCount++
 	}
 
-	if errorCount == 0 {
-		fmt.Println("All requests returned the correct response.")
-	} else {
+	if errorCount != 0 {
 		fmt.Printf("Some requests did not return the correct response. Errors: %d\n", errorCount)
 		os.Exit(1)
 	}
+	fmt.Println("All requests returned the correct response.")
 }

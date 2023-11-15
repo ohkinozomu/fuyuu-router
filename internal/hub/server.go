@@ -379,11 +379,10 @@ func Start(c HubConfig) {
 		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
 	}
 
-	if c.Protocol == "http1" {
-		s.startHTTP1(c)
-	} else {
+	if c.Protocol != "http1" {
 		c.Logger.Fatal("Unknown protocol: " + c.Protocol)
 	}
+	s.startHTTP1(c)
 }
 
 func (s *server) startHTTP1(c HubConfig) {

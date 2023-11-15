@@ -14,19 +14,19 @@ func NewZapToBadgerAdapter(logger *zap.Logger) *zapToBadgerAdapter {
 	return &zapToBadgerAdapter{logger: logger}
 }
 
-func (adapter *zapToBadgerAdapter) Errorf(format string, args ...interface{}) {
+func (adapter *zapToBadgerAdapter) Errorf(format string, args ...any) {
 	adapter.logger.Sugar().Errorf(format, args...)
 }
 
-func (adapter *zapToBadgerAdapter) Warningf(format string, args ...interface{}) {
+func (adapter *zapToBadgerAdapter) Warningf(format string, args ...any) {
 	adapter.logger.Sugar().Warnf(format, args...)
 }
 
-func (adapter *zapToBadgerAdapter) Infof(format string, args ...interface{}) {
+func (adapter *zapToBadgerAdapter) Infof(format string, args ...any) {
 	adapter.logger.Sugar().Infof(format, args...)
 }
 
-func (adapter *zapToBadgerAdapter) Debugf(format string, args ...interface{}) {
+func (adapter *zapToBadgerAdapter) Debugf(format string, args ...any) {
 	adapter.logger.Sugar().Debugf(format, args...)
 }
 
@@ -38,7 +38,7 @@ func NewZapToGoKitAdapter(logger *zap.Logger) *zapToGoKitAdapter {
 	return &zapToGoKitAdapter{logger: logger}
 }
 
-func (adapter *zapToGoKitAdapter) Log(keyvals ...interface{}) error {
+func (adapter *zapToGoKitAdapter) Log(keyvals ...any) error {
 	if len(keyvals)%2 != 0 {
 		return fmt.Errorf("keyvals must come in pairs")
 	}

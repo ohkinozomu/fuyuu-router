@@ -73,11 +73,12 @@ var hubCmd = &cobra.Command{
 			logger.Info("profiling enabled")
 			go func() {
 				var registry ncp.Registry
-				if config.Profiling.Registry == "cloudprofiler" {
+				switch config.Profiling.Registry {
+				case "cloudprofiler":
 					registry = ncp.CLOUD_PROFILER
-				} else if config.Profiling.Registry == "pyroscope" {
+				case "pyroscope":
 					registry = ncp.PYROSCOPE
-				} else {
+				default:
 					logger.Fatal("Unknown profiling registry")
 				}
 				c := ncp.Config{

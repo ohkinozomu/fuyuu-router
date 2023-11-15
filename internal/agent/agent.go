@@ -147,19 +147,21 @@ func Start(c AgentConfig) {
 
 	var terminatePayload []byte
 	var err error
-	if c.CommonConfigV2.Networking.Format == "json" {
+	switch c.CommonConfigV2.Networking.Format {
+	case "json":
 		terminatePayload, err = json.Marshal(&teminatePacket)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}
-	} else if c.CommonConfigV2.Networking.Format == "protobuf" {
+	case "protobuf":
 		terminatePayload, err = proto.Marshal(&teminatePacket)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}
-	} else {
+	default:
 		c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
 	}
+
 	if err != nil {
 		c.Logger.Fatal(err.Error())
 	}
@@ -181,17 +183,18 @@ func Start(c AgentConfig) {
 	}
 
 	var launchPayload []byte
-	if c.CommonConfigV2.Networking.Format == "json" {
+	switch c.CommonConfigV2.Networking.Format {
+	case "json":
 		launchPayload, err = json.Marshal(&launchPacket)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}
-	} else if c.CommonConfigV2.Networking.Format == "protobuf" {
+	case "protobuf":
 		launchPayload, err = proto.Marshal(&launchPacket)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}
-	} else {
+	default:
 		c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
 	}
 
@@ -259,10 +262,7 @@ func Start(c AgentConfig) {
 				combined := s.merger.GetCombinedData(chunk)
 				s.logger.Debug("Combined data")
 				mergeChPayload.httpRequestData.Body.Body = combined
-				processChPayload := processChPayload{
-					requestPacket:   mergeChPayload.requestPacket,
-					httpRequestData: mergeChPayload.httpRequestData,
-				}
+				processChPayload := processChPayload(mergeChPayload)
 				s.logger.Debug("Sending to processCh")
 				s.processCh <- processChPayload
 				s.logger.Debug("Sent to processCh")
@@ -272,131 +272,131 @@ func Start(c AgentConfig) {
 				s.logger.Debug("Processing request")
 				var responsePacket data.HTTPResponsePacket
 
-				if s.protocol == "http1" {
-					var responseData data.HTTPResponseData
-					var objectName string
-					httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
-					if err != nil {
-						s.logger.Error("Error sending HTTP request", zap.Error(err))
-						protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
-						// For now, not apply the storage relay to the error
-						responseData = data.HTTPResponseData{
-							Body: &data.HTTPBody{
-								Body: []byte(err.Error()),
-								Type: "data",
-							},
-							StatusCode: http.StatusInternalServerError,
-							Headers:    &protoHeaders,
+				if s.protocol != "http1" {
+					s.logger.Error("Unknown protocol: " + s.protocol)
+					return
+				}
+
+				var responseData data.HTTPResponseData
+				var objectName string
+				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
+				if err != nil {
+					s.logger.Error("Error sending HTTP request", zap.Error(err))
+					protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
+					// For now, not apply the storage relay to the error
+					responseData = data.HTTPResponseData{
+						Body: &data.HTTPBody{
+							Body: []byte(err.Error()),
+							Type: "data",
+						},
+						StatusCode: http.StatusInternalServerError,
+						Headers:    &protoHeaders,
+					}
+				} else {
+					httpResponseBytes := []byte(httpResponse)
+					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponseBytes) > s.commonConfig.Split.ChunkBytes {
+						var chunks [][]byte
+						for i := 0; i < len(httpResponseBytes); i += s.commonConfig.Split.ChunkBytes {
+							end := i + s.commonConfig.Split.ChunkBytes
+							if end > len(httpResponseBytes) {
+								end = len(httpResponseBytes)
+							}
+							chunks = append(chunks, httpResponseBytes[i:end])
 						}
-					} else {
-						httpResponseBytes := []byte(httpResponse)
-						if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponseBytes) > s.commonConfig.Split.ChunkBytes {
-							var chunks [][]byte
-							for i := 0; i < len(httpResponseBytes); i += s.commonConfig.Split.ChunkBytes {
-								end := i + s.commonConfig.Split.ChunkBytes
-								if end > len(httpResponseBytes) {
-									end = len(httpResponseBytes)
-								}
-								chunks = append(chunks, httpResponseBytes[i:end])
+
+						for sequence, c := range chunks {
+							httpBodyChunk := data.HTTPBodyChunk{
+								RequestId: processChPayload.requestPacket.RequestId,
+								Total:     int32(len(chunks)),
+								Sequence:  int32(sequence + 1),
+								Data:      c,
+							}
+							b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
+							if err != nil {
+								s.logger.Error("Error serializing HTTP body chunk", zap.Error(err))
+								return
 							}
 
-							for sequence, c := range chunks {
-								httpBodyChunk := data.HTTPBodyChunk{
-									RequestId: processChPayload.requestPacket.RequestId,
-									Total:     int32(len(chunks)),
-									Sequence:  int32(sequence + 1),
-									Data:      c,
-								}
-								b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
-								if err != nil {
-									s.logger.Error("Error serializing HTTP body chunk", zap.Error(err))
-									return
-								}
-
-								body := data.HTTPBody{
-									Body: b,
-									Type: "split",
-								}
-								protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
-								responseData = data.HTTPResponseData{
-									Body:       &body,
-									StatusCode: int32(statusCode),
-									Headers:    &protoHeaders,
-								}
-
-								b, err = data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format, s.encoder)
-								if err != nil {
-									s.logger.Error("Error serializing response data", zap.Error(err))
-									return
-								}
-								responsePacket = data.HTTPResponsePacket{
-									RequestId:        processChPayload.requestPacket.RequestId,
-									HttpResponseData: b,
-									Compress:         s.commonConfig.Networking.Compress,
-								}
-
-								responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
-
-								responsePayload, err := data.SerializeResponsePacket(&responsePacket, s.commonConfig.Networking.Format)
-								if err != nil {
-									s.logger.Error("Error serializing response packet", zap.Error(err))
-									return
-								}
-
-								_, err = s.client.Publish(context.Background(), &paho.Publish{
-									Topic:   responseTopic,
-									QoS:     0,
-									Payload: responsePayload,
-								})
-								if err != nil {
-									s.logger.Error("Error publishing response", zap.Error(err))
-									return
-								}
-							}
-						} else {
-							if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
-								objectName = s.id + "/" + processChPayload.requestPacket.RequestId + "/response"
-								err := s.bucket.Upload(context.Background(), objectName, strings.NewReader(httpResponse))
-								if err != nil {
-									s.logger.Error("Error uploading object to object storage", zap.Error(err))
-									return
-								}
+							body := data.HTTPBody{
+								Body: b,
+								Type: "split",
 							}
 							protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
-
-							var body data.HTTPBody
-							if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
-								body = data.HTTPBody{
-									Body: []byte(objectName),
-									Type: "storage_relay",
-								}
-							} else {
-								body = data.HTTPBody{
-									Body: []byte(httpResponse),
-									Type: "data",
-								}
-							}
-
 							responseData = data.HTTPResponseData{
 								Body:       &body,
 								StatusCode: int32(statusCode),
 								Headers:    &protoHeaders,
 							}
+
+							b, err = data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format, s.encoder)
+							if err != nil {
+								s.logger.Error("Error serializing response data", zap.Error(err))
+								return
+							}
+							responsePacket = data.HTTPResponsePacket{
+								RequestId:        processChPayload.requestPacket.RequestId,
+								HttpResponseData: b,
+								Compress:         s.commonConfig.Networking.Compress,
+							}
+
+							responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
+
+							responsePayload, err := data.SerializeResponsePacket(&responsePacket, s.commonConfig.Networking.Format)
+							if err != nil {
+								s.logger.Error("Error serializing response packet", zap.Error(err))
+								return
+							}
+
+							_, err = s.client.Publish(context.Background(), &paho.Publish{
+								Topic:   responseTopic,
+								QoS:     0,
+								Payload: responsePayload,
+							})
+							if err != nil {
+								s.logger.Error("Error publishing response", zap.Error(err))
+								return
+							}
+						}
+					} else {
+						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
+							objectName = s.id + "/" + processChPayload.requestPacket.RequestId + "/response"
+							err := s.bucket.Upload(context.Background(), objectName, strings.NewReader(httpResponse))
+							if err != nil {
+								s.logger.Error("Error uploading object to object storage", zap.Error(err))
+								return
+							}
+						}
+						protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
+
+						var body data.HTTPBody
+						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
+							body = data.HTTPBody{
+								Body: []byte(objectName),
+								Type: "storage_relay",
+							}
+						} else {
+							body = data.HTTPBody{
+								Body: []byte(httpResponse),
+								Type: "data",
+							}
+						}
+
+						responseData = data.HTTPResponseData{
+							Body:       &body,
+							StatusCode: int32(statusCode),
+							Headers:    &protoHeaders,
 						}
 					}
-					b, err := data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format, s.encoder)
-					if err != nil {
-						s.logger.Error("Error serializing response data", zap.Error(err))
-						return
-					}
-					responsePacket = data.HTTPResponsePacket{
-						RequestId:        processChPayload.requestPacket.RequestId,
-						HttpResponseData: b,
-						Compress:         s.commonConfig.Networking.Compress,
-					}
-				} else {
-					s.logger.Error("Unknown protocol: " + s.protocol)
+				}
+				b, err := data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format, s.encoder)
+				if err != nil {
+					s.logger.Error("Error serializing response data", zap.Error(err))
 					return
+				}
+				responsePacket = data.HTTPResponsePacket{
+					RequestId:        processChPayload.requestPacket.RequestId,
+					HttpResponseData: b,
+					Compress:         s.commonConfig.Networking.Compress,
 				}
 
 				responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)

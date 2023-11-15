@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: fuyuu-router-hub
-        image: ohkinozomu/fuyuu-router:6932d5a4388f2080d7d1e20b6ffb9fe24e1c4303
+        image: ohkinozomu/fuyuu-router:0.0.2
         volumeMounts:
         - name: fuyuu-router-hub-config
           mountPath: /app/config
@@ -37,4 +37,4 @@ data:
   config.toml: |
     [profiling]
     registry = "pyroscope"
-    server_address = "pyroscope.pyroscope:4040"
+    server_address = "http://pyroscope.pyroscope:4040"

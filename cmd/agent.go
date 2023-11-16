@@ -92,6 +92,7 @@ var agentCmd = &cobra.Command{
 				c := ncp.Config{
 					Registry:        registry,
 					ApplicationName: "fuyuu-router-agent",
+					ServerAddress:   config.Profiling.ServerAddress,
 				}
 				ncp := ncp.NeutralCP{Config: c}
 

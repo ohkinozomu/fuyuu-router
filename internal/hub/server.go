@@ -174,7 +174,8 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		panic(err)
+		s.logger.Error("Error subscribing to response topic", zap.Error(err))
+		return
 	}
 	defer s.responseClient.Unsubscribe(ctx, &paho.Unsubscribe{
 		Topics: []string{topic},

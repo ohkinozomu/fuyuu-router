@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/protobuf/proto"
 )
@@ -86,7 +85,7 @@ func DeserializeResponsePacket(payload []byte, format string) (*HTTPResponsePack
 	return &responsePacket, err
 }
 
-func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string, encoder *zstd.Encoder) ([]byte, error) {
+func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string) ([]byte, error) {
 	var b []byte
 	var err error
 	switch format {
@@ -103,21 +102,10 @@ func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string, e
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
-	if encoder != nil {
-		b = encoder.EncodeAll(b, nil)
-	}
 	return b, nil
 }
 
-func DeserializeHTTPRequestData(b []byte, compress string, format string, decoder *zstd.Decoder, bucket objstore.Bucket) (*HTTPRequestData, error) {
-	var err error
-	if compress == "zstd" && decoder != nil {
-		b, err = decoder.DecodeAll(b, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
-
+func DeserializeHTTPRequestData(b []byte, format string, bucket objstore.Bucket) (*HTTPRequestData, error) {
 	var httpRequestData HTTPRequestData
 	switch format {
 	case "json":
@@ -153,7 +141,7 @@ func DeserializeHTTPRequestData(b []byte, compress string, format string, decode
 	return &httpRequestData, nil
 }
 
-func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string, encoder *zstd.Encoder) ([]byte, error) {
+func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string) ([]byte, error) {
 	var b []byte
 	var err error
 	switch format {
@@ -170,20 +158,10 @@ func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
-	if encoder != nil {
-		b = encoder.EncodeAll(b, nil)
-	}
 	return b, nil
 }
 
-func DeserializeHTTPResponseData(b []byte, compress string, format string, decoder *zstd.Decoder, bucket objstore.Bucket) (*HTTPResponseData, error) {
-	var err error
-	if compress == "zstd" && decoder != nil {
-		b, err = decoder.DecodeAll(b, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
+func DeserializeHTTPResponseData(b []byte, format string, bucket objstore.Bucket) (*HTTPResponseData, error) {
 	var httpResponseData HTTPResponseData
 	switch format {
 	case "json":

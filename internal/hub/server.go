@@ -198,6 +198,10 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	bodyBytes := make([]byte, r.ContentLength)
 	r.Body.Read(bodyBytes)
 
+	if s.encoder != nil {
+		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
+	}
+
 	dataHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
 
 	var body data.HTTPBody
@@ -229,6 +233,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				Body: b,
 				Type: "split",
 			}
+
 			requestData := data.HTTPRequestData{
 				Method:  r.Method,
 				Path:    r.URL.Path,
@@ -236,7 +241,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				Body:    &body,
 			}
 
-			b, err = data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format, s.encoder)
+			b, err = data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format)
 			if err != nil {
 				s.logger.Error("Error serializing request data", zap.Error(err))
 				return
@@ -284,7 +289,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			Body:    &body,
 		}
 
-		b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format, s.encoder)
+		b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format)
 		if err != nil {
 			s.logger.Error("Error serializing request data", zap.Error(err))
 			return
@@ -318,26 +323,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	select {
 	case value := <-s.dataCh:
 		s.logger.Debug("Writing response...")
-		var compress string
-		err := s.db.View(func(txn *badger.Txn) error {
-			item, err := txn.Get([]byte("compress/" + uuid))
-			if err != nil {
-				return err
-			}
-			err = item.Value(func(val []byte) error {
-				compress = string(val)
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			s.logger.Error("Error getting compress value from database", zap.Error(err))
-			return
-		}
-		httpResponseData, err := data.DeserializeHTTPResponseData(value, compress, s.commonConfig.Networking.Format, s.decoder, s.bucket)
+		httpResponseData, err := data.DeserializeHTTPResponseData(value, s.commonConfig.Networking.Format, s.bucket)
 		if err != nil {
 			s.logger.Error("Error deserializing response data", zap.Error(err))
 			return
@@ -433,14 +419,25 @@ func (s *server) startHTTP1(c HubConfig) {
 				}
 			case updateDBChPayload := <-s.updateDBCh:
 				s.logger.Debug("Writing response to database...")
-				err := s.db.Update(func(txn *badger.Txn) error {
-					e1 := badger.NewEntry([]byte(updateDBChPayload.responsePacket.RequestId), updateDBChPayload.responsePacket.GetHttpResponseData()).WithTTL(time.Minute * 5)
-					err := txn.SetEntry(e1)
+
+				if updateDBChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
+					var err error
+					updateDBChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(updateDBChPayload.httpResponseData.Body.Body, nil)
 					if err != nil {
-						return err
+						s.logger.Info("Error decompressing message: " + err.Error())
+						return
 					}
-					e2 := badger.NewEntry([]byte("compress/"+updateDBChPayload.responsePacket.RequestId), []byte(updateDBChPayload.responsePacket.Compress)).WithTTL(time.Minute * 5)
-					err = txn.SetEntry(e2)
+				}
+
+				b, err := data.SerializeHTTPResponseData(updateDBChPayload.httpResponseData, s.commonConfig.Networking.Format)
+				if err != nil {
+					s.logger.Info("Error serializing HTTP response data: " + err.Error())
+					return
+				}
+
+				err = s.db.Update(func(txn *badger.Txn) error {
+					e := badger.NewEntry([]byte(updateDBChPayload.responsePacket.RequestId), b).WithTTL(time.Minute * 5)
+					err := txn.SetEntry(e)
 					if err != nil {
 						return err
 					}

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/eclipse/paho.golang/paho"
@@ -105,14 +104,14 @@ func newServer(c AgentConfig) server {
 	}
 }
 
-func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int, http.Header, error) {
+func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) ([]byte, int, http.Header, error) {
 	var responseHeader http.Header
 
 	url := "http://" + proxyHost + data.Path
 	body := bytes.NewBuffer(data.Body.Body)
 	req, err := http.NewRequest(data.Method, url, body)
 	if err != nil {
-		return "", http.StatusInternalServerError, responseHeader, err
+		return nil, http.StatusInternalServerError, responseHeader, err
 	}
 	for key, values := range data.Headers.GetHeaders() {
 		for _, value := range values.GetValues() {
@@ -122,15 +121,15 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (string, int
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", http.StatusInternalServerError, responseHeader, err
+		return nil, http.StatusInternalServerError, responseHeader, err
 	}
 	defer resp.Body.Close()
 	responseBody := new(bytes.Buffer)
 	_, err = responseBody.ReadFrom(resp.Body)
 	if err != nil {
-		return "", resp.StatusCode, responseHeader, err
+		return nil, resp.StatusCode, responseHeader, err
 	}
-	return responseBody.String(), resp.StatusCode, resp.Header, nil
+	return responseBody.Bytes(), resp.StatusCode, resp.Header, nil
 }
 
 func Start(c AgentConfig) {
@@ -229,7 +228,7 @@ func Start(c AgentConfig) {
 					return
 				}
 
-				httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, requestPacket.Compress, s.commonConfig.Networking.Format, s.decoder, s.bucket)
+				httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, s.commonConfig.Networking.Format, s.bucket)
 				if err != nil {
 					s.logger.Error("Error deserializing request data", zap.Error(err))
 					return
@@ -277,6 +276,14 @@ func Start(c AgentConfig) {
 					return
 				}
 
+				if processChPayload.requestPacket.Compress == "zstd" && s.decoder != nil {
+					processChPayload.httpRequestData.Body.Body, err = s.decoder.DecodeAll(processChPayload.httpRequestData.Body.Body, nil)
+					if err != nil {
+						s.logger.Error("Error decoding request body", zap.Error(err))
+						return
+					}
+				}
+
 				var responseData data.HTTPResponseData
 				var objectName string
 				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
@@ -293,15 +300,18 @@ func Start(c AgentConfig) {
 						Headers:    &protoHeaders,
 					}
 				} else {
-					httpResponseBytes := []byte(httpResponse)
-					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponseBytes) > s.commonConfig.Split.ChunkBytes {
+					if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
+						httpResponse = s.encoder.EncodeAll(httpResponse, nil)
+					}
+
+					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
 						var chunks [][]byte
-						for i := 0; i < len(httpResponseBytes); i += s.commonConfig.Split.ChunkBytes {
+						for i := 0; i < len(httpResponse); i += s.commonConfig.Split.ChunkBytes {
 							end := i + s.commonConfig.Split.ChunkBytes
-							if end > len(httpResponseBytes) {
-								end = len(httpResponseBytes)
+							if end > len(httpResponse) {
+								end = len(httpResponse)
 							}
-							chunks = append(chunks, httpResponseBytes[i:end])
+							chunks = append(chunks, httpResponse[i:end])
 						}
 
 						for sequence, c := range chunks {
@@ -328,7 +338,7 @@ func Start(c AgentConfig) {
 								Headers:    &protoHeaders,
 							}
 
-							b, err = data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format, s.encoder)
+							b, err = data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format)
 							if err != nil {
 								s.logger.Error("Error serializing response data", zap.Error(err))
 								return
@@ -360,7 +370,7 @@ func Start(c AgentConfig) {
 					} else {
 						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
 							objectName = s.id + "/" + processChPayload.requestPacket.RequestId + "/response"
-							err := s.bucket.Upload(context.Background(), objectName, strings.NewReader(httpResponse))
+							err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(httpResponse))
 							if err != nil {
 								s.logger.Error("Error uploading object to object storage", zap.Error(err))
 								return
@@ -388,7 +398,7 @@ func Start(c AgentConfig) {
 						}
 					}
 				}
-				b, err := data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format, s.encoder)
+				b, err := data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format)
 				if err != nil {
 					s.logger.Error("Error serializing response data", zap.Error(err))
 					return

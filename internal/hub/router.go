@@ -41,7 +41,8 @@ func (r *Router) Route(p *packets.Publish) {
 		r.logger.Info("Error deserializing response packet: " + err.Error())
 		return
 	}
-	httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), httpResponsePacket.Compress, r.commonConfig.Networking.Format, r.decoder, nil)
+
+	httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), r.commonConfig.Networking.Format, nil)
 	if err != nil {
 		r.logger.Info("Error deserializing HTTP response data: " + err.Error())
 		return

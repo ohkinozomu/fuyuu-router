@@ -48,6 +48,36 @@ type server struct {
 	dataCh         chan []byte
 	mergeCh        chan mergeChPayload
 	updateDBCh     chan updateDBChPayload
+	errCh          chan error
+}
+
+func newResponseClient(c HubConfig, db *badger.DB, encoder *zstd.Encoder, decoder *zstd.Decoder, mergeCh chan mergeChPayload, updateDBCh chan updateDBChPayload) *paho.Client {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	c.Logger.Debug("Connecting to MQTT broker...")
+	responseConn, err := common.TCPConnect(ctx, c.CommonConfig)
+	if err != nil {
+		c.Logger.Fatal("Error: " + err.Error())
+	}
+	responseClientConfig := paho.ClientConfig{
+		Conn:   responseConn,
+		Router: NewRouter(db, c.Logger, c.CommonConfigV2, encoder, decoder, mergeCh, updateDBCh),
+	}
+	return paho.NewClient(responseClientConfig)
+}
+
+func newRequestClient(c HubConfig) *paho.Client {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	c.Logger.Debug("Connecting to MQTT broker...")
+	requestConn, err := common.TCPConnect(ctx, c.CommonConfig)
+	if err != nil {
+		c.Logger.Fatal("Error: " + err.Error())
+	}
+	requestClientConfig := paho.ClientConfig{
+		Conn: requestConn,
+	}
+	return paho.NewClient(requestClientConfig)
 }
 
 func newServer(c HubConfig) server {
@@ -55,14 +85,6 @@ func newServer(c HubConfig) server {
 	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true).WithLogger(common.NewZapToBadgerAdapter(c.Logger)))
 	if err != nil {
 		c.Logger.Fatal("Error opening database: " + err.Error())
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	c.Logger.Debug("Connecting to MQTT broker...")
-	responseConn, err := common.TCPConnect(ctx, c.CommonConfig)
-	if err != nil {
-		c.Logger.Fatal("Error: " + err.Error())
 	}
 
 	var encoder *zstd.Encoder
@@ -81,23 +103,28 @@ func newServer(c HubConfig) server {
 	dataCh := make(chan []byte)
 	mergeCh := make(chan mergeChPayload)
 	updateDBCh := make(chan updateDBChPayload)
-	responseClientConfig := paho.ClientConfig{
-		Conn:   responseConn,
-		Router: NewRouter(db, c.Logger, c.CommonConfigV2, encoder, decoder, mergeCh, updateDBCh),
+	errCh := make(chan error)
+	responseClient := newResponseClient(c, db, encoder, decoder, mergeCh, updateDBCh)
+	requestClient := newRequestClient(c)
+	connect := common.MQTTConnect(c.CommonConfig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	c.Logger.Debug("Connecting to MQTT broker...")
+	_, err = requestClient.Connect(ctx, connect)
+	if err != nil {
+		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
 	}
-	responseClient := paho.NewClient(responseClientConfig)
 
 	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+
 	c.Logger.Debug("Connecting to MQTT broker...")
-	requestConn, err := common.TCPConnect(ctx, c.CommonConfig)
+	_, err = responseClient.Connect(ctx, connect)
 	if err != nil {
-		c.Logger.Fatal("Error: " + err.Error())
+		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
 	}
-	requestClientConfig := paho.ClientConfig{
-		Conn: requestConn,
-	}
-	requestClient := paho.NewClient(requestClientConfig)
 
 	var bucket objstore.Bucket
 	if c.CommonConfigV2.Networking.LargeDataPolicy == "storage_relay" {
@@ -124,6 +151,7 @@ func newServer(c HubConfig) server {
 		dataCh:         dataCh,
 		mergeCh:        mergeCh,
 		updateDBCh:     updateDBCh,
+		errCh:          errCh,
 	}
 }
 
@@ -174,7 +202,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		s.logger.Error("Error subscribing to response topic", zap.Error(err))
+		s.errCh <- err
 		return
 	}
 	defer s.responseClient.Unsubscribe(ctx, &paho.Unsubscribe{
@@ -346,26 +374,6 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 func Start(c HubConfig) {
 	s := newServer(c)
 
-	connect := common.MQTTConnect(c.CommonConfig)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	s.logger.Debug("Connecting to MQTT broker...")
-	_, err := s.requestClient.Connect(ctx, connect)
-	if err != nil {
-		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
-	}
-
-	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	s.logger.Debug("Connecting to MQTT broker...")
-	_, err = s.responseClient.Connect(ctx, connect)
-	if err != nil {
-		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
-	}
-
 	if c.Protocol != "http1" {
 		c.Logger.Fatal("Unknown protocol: " + c.Protocol)
 	}
@@ -400,6 +408,32 @@ func (s *server) startHTTP1(c HubConfig) {
 
 	go func() {
 		for {
+			// TODO: reconnect backoff
+			if s.requestClient == nil || s.responseClient == nil {
+				s.requestClient = newRequestClient(c)
+				s.responseClient = newResponseClient(c, s.db, s.encoder, s.decoder, s.mergeCh, s.updateDBCh)
+
+				connect := common.MQTTConnect(c.CommonConfig)
+
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+
+				s.logger.Debug("Connecting to MQTT broker...")
+				_, err := s.requestClient.Connect(ctx, connect)
+				if err != nil {
+					c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
+				}
+
+				ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+
+				s.logger.Debug("Connecting to MQTT broker...")
+				_, err = s.responseClient.Connect(ctx, connect)
+				if err != nil {
+					c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
+				}
+			}
+
 			select {
 			case mergeChPayload := <-s.mergeCh:
 				chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpResponseData.Body.Body, s.commonConfig.Networking.Format)
@@ -444,6 +478,10 @@ func (s *server) startHTTP1(c HubConfig) {
 					s.logger.Info("Error setting key in database: " + err.Error())
 					return
 				}
+			case err := <-s.errCh:
+				s.logger.Info("Error: " + err.Error())
+				s.requestClient = nil
+				s.responseClient = nil
 			}
 		}
 	}()

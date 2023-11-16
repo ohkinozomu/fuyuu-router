@@ -411,11 +411,7 @@ func (s *server) startHTTP1(c HubConfig) {
 				if s.merger.IsComplete(chunk) {
 					combined := s.merger.GetCombinedData(chunk)
 					mergeChPayload.httpResponseData.Body.Body = combined
-					updateDBChPayload := updateDBChPayload{
-						responsePacket:   mergeChPayload.responsePacket,
-						httpResponseData: mergeChPayload.httpResponseData,
-					}
-					s.updateDBCh <- updateDBChPayload
+					s.updateDBCh <- updateDBChPayload(mergeChPayload)
 				}
 			case updateDBChPayload := <-s.updateDBCh:
 				s.logger.Debug("Writing response to database...")

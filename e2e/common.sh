@@ -36,7 +36,7 @@ create_cluster() {
         kind create cluster --name fuyuu-test-cluster
     fi
     kubectl create namespace fuyuu-router
-    kubectl create namespace nanomq
+    kubectl create namespace mosquitto
 }
 
 build_and_load_image() {
@@ -48,7 +48,7 @@ wait_pods() {
     if [ -n "$WAIT_SCRIPT" ]; then
         "$WAIT_SCRIPT"
     else
-        while [[ $(kubectl get pods -n nanomq -l app=nanomq -o 'jsonpath={..status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do echo "waiting for nanomq" && sleep 5; done
+        while [[ $(kubectl get pods -n mosquitto -l app=mosquitto -o 'jsonpath={..status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do echo "waiting for mosquitto" && sleep 5; done
         while [[ $(kubectl get pods -n fuyuu-router -l app=fuyuu-router-hub -o 'jsonpath={..status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do echo "waiting for hub pod" && sleep 5; done
         while [[ $(kubectl get pods -n fuyuu-router -l app=fuyuu-router-agent -o 'jsonpath={..status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do echo "waiting for agent pod" && sleep 5; done
         while [[ $(kubectl get pods -n fuyuu-router -l app=curl-tester -o 'jsonpath={..status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do echo "waiting for curl-tester pod" && sleep 5; done
@@ -76,9 +76,9 @@ run_test() {
         exit 0
     else
         echo "Test failed"
-        nanomq_pod=$(kubectl get pods -n nanomq -l app=nanomq -o jsonpath='{.items[0].metadata.name}')
-        echo "Displaying logs for nanomq:"
-        kubectl logs -n nanomq "${nanomq_pod}"
+        mosquitto_pod=$(kubectl get pods -n mosquitto -l app=mosquitto -o jsonpath='{.items[0].metadata.name}')
+        echo "Displaying logs for mosquitto:"
+        kubectl logs -n mosquitto "${mosquitto_pod}"
 
         fuyuu_router_hub_pod=$(kubectl get pods -n fuyuu-router -l app=fuyuu-router-hub -o jsonpath='{.items[0].metadata.name}')
         echo "Displaying logs for fuyuu-router-hub:"

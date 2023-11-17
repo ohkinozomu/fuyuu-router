@@ -24,7 +24,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router hub -c /app/config/config.toml -b nanomq.nanomq:1883 --loglevel debug
+          /app/fuyuu-router hub -c /app/config/config.toml -b mosquitto.mosquitto:1883 --loglevel debug
         ports:
         - containerPort: 8080
       volumes:

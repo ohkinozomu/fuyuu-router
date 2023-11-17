@@ -1,0 +1,190 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto
+  namespace: mosquitto
+  labels:
+    app: mosquitto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mosquitto
+  template:
+    metadata:
+      labels:
+        app: mosquitto
+    spec:
+      containers:
+      - name: mosquitto
+        image: eclipse-mosquitto:latest
+        ports:
+        - containerPort: 8883
+        volumeMounts:
+        - name: config-volume
+          mountPath: /mosquitto/config/mosquitto.conf
+          subPath: mosquitto.conf
+        - name: certs-volume
+          mountPath: /etc/certs
+      volumes:
+      - name: config-volume
+        configMap:
+          name: mosquitto-config
+      - name: certs-volume
+        configMap:
+          name: mosquitto-certs
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config
+  namespace: mosquitto
+data:
+  mosquitto.conf: |
+    allow_anonymous true
+    listener 8883
+    cafile /etc/certs/cacert.pem
+    keyfile /etc/certs/key.pem
+    certfile /etc/certs/cert.pem
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-certs
+  namespace: mosquitto
+data:
+  key.pem: |
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIJKAIBAAKCAgEA7bg5DLv+86SI1YaBvMnzzawj16WxJhJm2KXG0fAJGW02NDhT
+    nkaUrSTTKsO10RpFbigSKSBP+2oTzteASjRMURYybwBt8wu968r9s6c/YeXpfza1
+    BDnfXxoYNGhk09yewXfnb4YlwBpBpqoMU8ZB7nxKq8ucooGbquQG65BN9hPk8qJy
+    NEVbDrMRkECwDIyafnM02GRaVYy3RYYZAKyK8zgCJNj9uC65Bv74UtuiuCKK54sb
+    OCssJD+kXYqYd4Ya6ahi7xXADLGyG4R6M43GQX3xq4zqocceFGk2R7NJIdJdM7KV
+    D0OoTPaXaP8GwNRbDyeuFiyO7l6ZAHdc0aG2KO2dH5QEdlY1XJ7dywDMTTmyIkC3
+    1Vs81BlgLtNciILVv77CkXcDJB7d7n2ObUwTpXcjOuRbZdeZwYnCCvHthCggV+sB
+    FKvF/ltyPtM/v3Fvwal2NhVOORA3SWlttRC1SU09nI1sfMKEbivfynm1K2Rkl9fW
+    WipXaWZCx3lccKuj9w49I68WNikrtv+9C6k+n+0ff0tkM3V2Zp7VgItMbU+BqAIG
+    2xzoXAiYhLanGAxzMkzy2Z+p9QOkGjh/gSNQqhM82e2q/VR6B+P2Tb++jsJgsG8D
+    BJ6G4f9y7PL3vvwoEy3Vnb3xTcqv+uquT4QKn0UwEiHgNhxdUbJQXq18OP8CAwEA
+    AQKCAgA9kpz8Rml4FCL5I5jRHIIQwMib36ft05BeBzpjQEgrFNWYWwqVkXSLEGG9
+    zul2Gtbm/GwPyPXOiiBNUBZDoh4uVpCDndncvSrZOz/RW72YDuQW9kWWraLE0E56
+    rJuJILjiJbuFcHqwslxU3fDJdi23puv0aY3NrcJzVhLQyxTWazq++gKYtWoreYhQ
+    E+FFrtmJbS+/6OZZCFSkJmKtgQOQke5EOwwku71jKYGKfKc+CHxwEuDfAJezX+Sj
+    8fUh6FNqOBpAESMoZpJafErmtY8ngYaqR5qygo+w+7t6gN6tav6HGHdxd7XNEYYQ
+    RRYrthVL7Jwz1CDFby00KLaa+cbjfTFeMTRvtj7c1LPxPWglaWwdRzv5w23MEbot
+    PJHeUP/6h+mf2udKhQ/gcALbovUKH31eqU9WbQg8GpA3TPsppxpIcbKY35CvJnuj
+    0Olo9oA6aLtPr2l3RE2Es+PVacPnTlrunV8J75/96+Pp+uj1QpQvGDLkZwBoIgX6
+    grSmjhuch9tn8acJiAtJBMQJTU8U8FQxIcwX/WMf3f0UlNIeUZXcpWHW5xYYszBA
+    qq0ktMrhqLujAY5XrCq9Yc8STR2GNLZkPSOFYL+qJjHrlvpAZ5VonrQ732RrRk8Q
+    a1FVda8AbfYFARwuSzBYhMdmON9g51Ij7JFI+CvvtpsEXifWuQKCAQEA8xJxn7gI
+    +GaLptMr+jSdcgrWUywY2DlL3Q2kD09f7sI8wXbkTKaa1f5PvDC30Uw0eoHaUOh1
+    ds8+90y4wwAEqd6ATmLIZCI9qtf7bdSdBGe6FqXR2YASQWDBxvKrDExHoM/iDZCJ
+    DR1NC+Ut5+9qrP+MfCU0cuUKsZCfXozrzXKPDSAF0Yt9gPgtVFIiJvhe29p4PEzN
+    oSzqIxhp29wA7nw4D+xl25q9sLu2bDjFHBYaTBO8+2UJ+URIcUKxm8R64JUe87jH
+    8bzD1DBU596hzvGMX8ggitIpRW+8CRpw4M8e0INaT9d55cbEZOBBPkDVoytKNOfs
+    kSUqrxQG10mqhQKCAQEA+lznIf/kc2kIkGSn18Z4e//PvuV/n6jEZqLRmuiqCSVE
+    4zQAtM2IJfR8FfdMlDXkteDCquo/rvngnsorNgYdoOoQA9jhCVEJpjMqP3Dtbr9q
+    ea2foHQfc7ERi1aZTtCoPUNSOY6JXMm4goFwDY7qbB5lEbwlu7ex/eHhRianMilX
+    5+Y1sUeIXc87q34A8Iadu+jBS13ju7fn0CmxgiPuL4XNo+qGvC7m2S7NrGpC7IJW
+    R1cw1Q0N/ZgvF1sm5+7TCMgFAEDsb1D0pa1sZTs4X5zseB7gdpKVTjF6kDoKolh8
+    PrM8GUhU2KP3JoJhF+cbxL/jIt3Ab4B7jG6Av7VmswKCAQEAsxjD34saEOx9uU2e
+    +ZwK5hxWDrJPHAIbg6SpXR5+8MztNx8C1/dp3oKi/WZoCi67/Afxc+vToNbS7iP5
+    frRku0TWBOuD+0O/bEH3X9VoW/aRhl5nYHqc+M7x+ESVA1qw7Cw/wv7b/G26dylF
+    yb7+OrmQKWjAXGemmW6V/nSWyam+/Uy6/MpqjrxNqfNadpxKSHOQY92zJS6S1YkH
+    dpeDmDSumgz0f/pkCfRFVTf/A9LFTYi9lf28e410Uv9xHfSHFTLKu4lKyTLsl0uF
+    Q9MmJfSUGX67e42eGytYwNxaj0oMylX+FRYPGt55lloluFjNEIy1AIZiKA/ag2We
+    JMKCgQKCAQA1/4mebKmiNroxInSM9nKQFAmDm84d6nGJzX410g6ycEZeVp38YQQH
+    Y6bLug3bPZB5peN2p5VasOxAc0xEl6cWSMVxfvpyXvcc0JZBHqMnKsPVQJxYKBOM
+    iVlGW0QvmpNeu0Flxpdb2uofw7keQ3/OF/QmkhT1WtZZ8rj6v2V6TS53htB3zvzb
+    dtHg2Alt1yr4F2hxT+vJVg36eLOfZQ5/U3WZ8ABlYBxMJWsYz8Zlamsfce/HU8x7
+    sLIfcHqAtaLwlut1NYuJKsXJYhEp+E7dWGQsOESjblQjjEpqBwq6HymVAGVq8o3S
+    N/MbbC1y0VbM5bIgmAFkSyrajA7ayk4/AoIBACXJcaitYhrWI79kPOHJMM47Hyrn
+    SOmtdDMu6mtnTDYje9Cdmu3ArIRkW7dJm8RLJsGcOpTDrRWDowcvc1vFqdgZKvkw
+    ziUN1RL0BVOCouL1Jpx4NM3QuPVsclkuYgo+g1jbPN7JMg2vJOspnMq7Q5ajN9ZF
+    Kt8wUWmZSwQkX16maSeHxeA9B75QD7SsemVpI9YfEXvk7rKjvslfp1idtaB90tYY
+    QC180AltN7Gvbs5oCi4VABwi94CtW8SHpw/wYXYk7qcZM3Txfrp9/l9mW2O/uurb
+    ZBWHFT5KmJZNWDZU6Z65PnjuTBakSwqOAEqFOcGIioSiqH/GoDmgZDrqKrU=
+    -----END RSA PRIVATE KEY-----
+  cert.pem: |
+    -----BEGIN CERTIFICATE-----
+    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
+    -----END CERTIFICATE-----
+  cacert.pem: |
+    -----BEGIN CERTIFICATE-----
+    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
+    -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto
+  namespace: mosquitto
+spec:
+  selector:
+    app: mosquitto
+  ports:
+    - protocol: TCP
+      port: 8883
+      targetPort: 8883
+  type: NodePort

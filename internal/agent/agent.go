@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
+	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
@@ -30,7 +32,7 @@ type mergeChPayload struct {
 }
 
 type server struct {
-	client       *paho.Client
+	client       *autopaho.ConnectionManager
 	id           string
 	proxyHost    string
 	logger       *zap.Logger
@@ -45,21 +47,122 @@ type server struct {
 	merger       *data.Merger
 }
 
+func createWillMessage(c AgentConfig) *paho.WillMessage {
+	teminatePacket := data.TerminatePacket{
+		AgentId: c.ID,
+		Labels:  c.Labels,
+	}
+
+	var terminatePayload []byte
+	var err error
+	switch c.CommonConfigV2.Networking.Format {
+	case "json":
+		terminatePayload, err = json.Marshal(&teminatePacket)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	case "protobuf":
+		terminatePayload, err = proto.Marshal(&teminatePacket)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+	default:
+		c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
+	}
+	return &paho.WillMessage{
+		Retain:  false,
+		QoS:     0,
+		Topic:   topics.TerminateTopic(),
+		Payload: terminatePayload,
+	}
+}
+
 func newServer(c AgentConfig) server {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	conn, err := common.TCPConnect(ctx, c.CommonConfig)
+
+	u, err := url.Parse(c.MQTTBroker)
 	if err != nil {
-		c.Logger.Fatal("Error: " + err.Error())
+		c.Logger.Fatal("Error parsing MQTT broker URL: " + err.Error())
 	}
+
 	payloadCh := make(chan []byte)
 	mergeCh := make(chan mergeChPayload)
 	processCh := make(chan processChPayload, 1000)
-	clientConfig := paho.ClientConfig{
-		Conn:   conn,
-		Router: NewRouter(payloadCh, c, c.Logger),
+
+	cliCfg := autopaho.ClientConfig{
+		ServerUrls:                    []*url.URL{u},
+		KeepAlive:                     20,
+		CleanStartOnInitialConnection: false,
+		SessionExpiryInterval:         60,
+		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+			launchPacket := data.LaunchPacket{
+				AgentId: c.ID,
+				Labels:  c.Labels,
+			}
+
+			var launchPayload []byte
+			switch c.CommonConfigV2.Networking.Format {
+			case "json":
+				launchPayload, err = json.Marshal(&launchPacket)
+				if err != nil {
+					c.Logger.Fatal(err.Error())
+				}
+			case "protobuf":
+				launchPayload, err = proto.Marshal(&launchPacket)
+				if err != nil {
+					c.Logger.Fatal(err.Error())
+				}
+			default:
+				c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
+			}
+
+			_, err = cm.Publish(context.Background(), &paho.Publish{
+				Topic: topics.LaunchTopic(),
+				// Maybe it should be 1.
+				QoS:     0,
+				Payload: launchPayload,
+			})
+			if err != nil {
+				c.Logger.Fatal(err.Error())
+			}
+
+			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+				Subscriptions: []paho.SubscribeOptions{
+					{Topic: topics.RequestTopic(c.ID), QoS: 1},
+				},
+			}); err != nil {
+				c.Logger.Fatal("Error subscribing to MQTT topic: " + err.Error())
+			}
+			c.Logger.Info("Subscribed to MQTT topic")
+		},
+		OnConnectError: func(err error) {
+			c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
+		},
+		ClientConfig: paho.ClientConfig{
+			ClientID: c.ID,
+			Router:   NewRouter(payloadCh, c, c.Logger),
+			OnClientError: func(err error) {
+				c.Logger.Fatal("Error from MQTT client: " + err.Error())
+			},
+			OnServerDisconnect: func(d *paho.Disconnect) {
+				if d.Properties != nil {
+					c.Logger.Error("server requested disconnect", zap.String("reason", d.Properties.ReasonString))
+				} else {
+					c.Logger.Error("server requested disconnect")
+				}
+			},
+		},
+		WillMessage: createWillMessage(c),
 	}
-	client := paho.NewClient(clientConfig)
+
+	cm, err := autopaho.NewConnection(ctx, cliCfg)
+	if err != nil {
+		c.Logger.Fatal(err.Error())
+	}
+	if err = cm.AwaitConnection(ctx); err != nil {
+		c.Logger.Fatal(err.Error())
+	}
 
 	var encoder *zstd.Encoder
 	var decoder *zstd.Decoder
@@ -88,7 +191,7 @@ func newServer(c AgentConfig) server {
 	}
 
 	return server{
-		client:       client,
+		client:       cm,
 		payloadCh:    payloadCh,
 		mergeCh:      mergeCh,
 		processCh:    processCh,
@@ -138,86 +241,7 @@ func Start(c AgentConfig) {
 	}
 
 	s := newServer(c)
-	connect := common.MQTTConnect(c.CommonConfig)
-	teminatePacket := data.TerminatePacket{
-		AgentId: c.ID,
-		Labels:  c.Labels,
-	}
 
-	var terminatePayload []byte
-	var err error
-	switch c.CommonConfigV2.Networking.Format {
-	case "json":
-		terminatePayload, err = json.Marshal(&teminatePacket)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-	case "protobuf":
-		terminatePayload, err = proto.Marshal(&teminatePacket)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-	default:
-		c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
-	}
-
-	if err != nil {
-		c.Logger.Fatal(err.Error())
-	}
-
-	connect.WillMessage = &paho.WillMessage{
-		Retain:  false,
-		QoS:     0,
-		Topic:   topics.TerminateTopic(),
-		Payload: terminatePayload,
-	}
-	_, err = s.client.Connect(context.Background(), connect)
-	if err != nil {
-		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
-	}
-
-	launchPacket := data.LaunchPacket{
-		AgentId: c.ID,
-		Labels:  c.Labels,
-	}
-
-	var launchPayload []byte
-	switch c.CommonConfigV2.Networking.Format {
-	case "json":
-		launchPayload, err = json.Marshal(&launchPacket)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-	case "protobuf":
-		launchPayload, err = proto.Marshal(&launchPacket)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-	default:
-		c.Logger.Fatal("Unknown format: " + c.CommonConfigV2.Networking.Format)
-	}
-
-	_, err = s.client.Publish(context.Background(), &paho.Publish{
-		Topic: topics.LaunchTopic(),
-		// Maybe it should be 1.
-		QoS:     0,
-		Payload: launchPayload,
-	})
-	if err != nil {
-		c.Logger.Fatal(err.Error())
-	}
-
-	_, err = s.client.Subscribe(context.Background(), &paho.Subscribe{
-		Subscriptions: []paho.SubscribeOptions{
-			{
-				Topic: topics.RequestTopic(c.ID),
-				QoS:   0,
-			},
-		},
-	})
-	if err != nil {
-		c.Logger.Fatal(err.Error())
-	}
 	for {
 		select {
 		case payload := <-s.payloadCh:
@@ -276,6 +300,7 @@ func Start(c AgentConfig) {
 					return
 				}
 
+				var err error
 				if processChPayload.requestPacket.Compress == "zstd" && s.decoder != nil {
 					processChPayload.httpRequestData.Body.Body, err = s.decoder.DecodeAll(processChPayload.httpRequestData.Body.Body, nil)
 					if err != nil {

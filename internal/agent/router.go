@@ -3,6 +3,7 @@ package agent
 import (
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho/log"
 	"go.uber.org/zap"
 )
 
@@ -29,4 +30,4 @@ func (r *Router) RegisterHandler(string, paho.MessageHandler) {}
 
 func (r *Router) UnregisterHandler(string) {}
 
-func (r *Router) SetDebugLogger(paho.Logger) {}
+func (r *Router) SetDebugLogger(log.Logger) {}

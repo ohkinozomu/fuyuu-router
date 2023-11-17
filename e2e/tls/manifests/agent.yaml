@@ -19,7 +19,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b mosquitto.mosquitto:8883 --proxy-host 127.0.0.1:8000 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
+          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b mqtts://mosquitto.mosquitto:8883 --proxy-host 127.0.0.1:8000 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
         volumeMounts:
         - name: certs-volume
           mountPath: /etc/certs

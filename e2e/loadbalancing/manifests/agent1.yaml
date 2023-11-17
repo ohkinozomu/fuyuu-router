@@ -22,7 +22,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b mosquitto.mosquitto:1883 --proxy-host 127.0.0.1:8000 --loglevel debug
+          /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b mqtt://mosquitto.mosquitto:1883 --proxy-host 127.0.0.1:8000 --loglevel debug
       - name: appserver
         image: golang:1.21.3
         command: ["/bin/sh", "-c"]

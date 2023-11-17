@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto
+  namespace: mosquitto
+  labels:
+    app: mosquitto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mosquitto
+  template:
+    metadata:
+      labels:
+        app: mosquitto
+    spec:
+      containers:
+      - name: mosquitto
+        image: eclipse-mosquitto:latest
+        ports:
+        - containerPort: 1883
+        volumeMounts:
+        - name: config-volume
+          mountPath: /mosquitto/config/mosquitto.conf
+          subPath: mosquitto.conf
+        - name: mosquitto-pwd
+          mountPath: /mosquitto/config/password_file
+          subPath: password_file
+      volumes:
+      - name: config-volume
+        configMap:
+          name: mosquitto-config
+      - name: mosquitto-pwd
+        configMap:
+          name: mosquitto-pwd
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config
+  namespace: mosquitto
+data:
+  mosquitto.conf: |
+    listener 1883
+    password_file /mosquitto/config/password_file
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-pwd
+  namespace: mosquitto
+data:
+  # mosquitto_passwd -c -b password_file admin adminpassword
+  password_file: |
+    admin:$7$101$RXn9/UPWlMpi1d6D$Zs8Zl9hT5CdpfCqamwccRmjMC+rpsMiIZWYWMO3fotXMttvPKYXV9taSfQ0utPBtcqi8gcfdIG0hyAVEWWNVqQ==
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto
+  namespace: mosquitto
+spec:
+  selector:
+    app: mosquitto
+  ports:
+    - protocol: TCP
+      port: 1883
+      targetPort: 1883
+  type: NodePort

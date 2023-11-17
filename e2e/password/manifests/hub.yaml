@@ -22,7 +22,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router hub -c /app/config/config.toml -b nanomq.nanomq:1883 --username admin --password adminpassword
+          /app/fuyuu-router hub -c /app/config/config.toml -b mosquitto.mosquitto:1883 --username admin --password adminpassword
         ports:
         - containerPort: 8080
       volumes:

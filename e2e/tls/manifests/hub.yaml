@@ -19,7 +19,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /app/fuyuu-router hub -c /app/config/config.toml -b mosquitto.mosquitto:8883 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
+          /app/fuyuu-router hub -c /app/config/config.toml -b mqtts://mosquitto.mosquitto:8883 --loglevel debug --cafile /etc/certs/cacert.pem --cert /etc/certs/cert.pem --key /etc/certs/key.pem
         ports:
         - containerPort: 8080
         volumeMounts:

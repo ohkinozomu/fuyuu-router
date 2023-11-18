@@ -2,9 +2,12 @@ package hub
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -13,6 +16,7 @@ import (
 
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/pb"
+	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -36,49 +40,97 @@ type updateDBChPayload struct {
 }
 
 type server struct {
-	requestClient  *paho.Client
-	responseClient *paho.Client
-	db             *badger.DB
-	logger         *zap.Logger
-	encoder        *zstd.Encoder
-	decoder        *zstd.Decoder
-	commonConfig   common.CommonConfigV2
-	bucket         objstore.Bucket
-	merger         *data.Merger
-	dataCh         chan []byte
-	payloadCh      chan []byte
-	mergeCh        chan mergeChPayload
-	updateDBCh     chan updateDBChPayload
-	errCh          chan error
+	client       *autopaho.ConnectionManager
+	db           *badger.DB
+	logger       *zap.Logger
+	encoder      *zstd.Encoder
+	decoder      *zstd.Decoder
+	commonConfig common.CommonConfigV2
+	bucket       objstore.Bucket
+	merger       *data.Merger
+	dataCh       chan []byte
+	payloadCh    chan []byte
+	mergeCh      chan mergeChPayload
+	updateDBCh   chan updateDBChPayload
+	errCh        chan error
 }
 
-func newResponseClient(c HubConfig, db *badger.DB, encoder *zstd.Encoder, decoder *zstd.Decoder, payloadCh chan []byte, mergeCh chan mergeChPayload, updateDBCh chan updateDBChPayload) *paho.Client {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	c.Logger.Debug("Connecting to MQTT broker...")
-	responseConn, err := common.TCPConnect(ctx, c.CommonConfig)
+func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
+	u, err := url.Parse(c.MQTTBroker)
 	if err != nil {
-		c.Logger.Fatal("Error: " + err.Error())
+		c.Logger.Fatal("Error parsing MQTT broker URL: " + err.Error())
 	}
-	responseClientConfig := paho.ClientConfig{
-		Conn:   responseConn,
-		Router: NewRouter(payloadCh),
-	}
-	return paho.NewClient(responseClientConfig)
-}
 
-func newRequestClient(c HubConfig) *paho.Client {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	c.Logger.Debug("Connecting to MQTT broker...")
-	requestConn, err := common.TCPConnect(ctx, c.CommonConfig)
+	var connectUsername string
+	var connectPassword []byte
+	if c.Username != "" && c.Password != "" {
+		connectUsername = c.Username
+		connectPassword = []byte(c.Password)
+	}
+
+	var tlsConfig tls.Config
+	if c.CAFile != "" && c.Cert != "" && c.Key != "" {
+		caCert, err := os.ReadFile(c.CAFile)
+		if err != nil {
+			c.Logger.Sugar().Fatalf("failed to read the CA cert file: %s", err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			c.Logger.Sugar().Fatalf("failed to append CA cert to the pool")
+		}
+
+		cert, err := tls.LoadX509KeyPair(c.Cert, c.Key)
+		if err != nil {
+			c.Logger.Sugar().Fatalf("failed to load the cert file: %s", err)
+		}
+		tlsConfig = tls.Config{
+			RootCAs:      caCertPool,
+			Certificates: []tls.Certificate{cert},
+		}
+	}
+
+	cliCfg := autopaho.ClientConfig{
+		TlsCfg:                        &tlsConfig,
+		ServerUrls:                    []*url.URL{u},
+		KeepAlive:                     20,
+		CleanStartOnInitialConnection: false,
+		SessionExpiryInterval:         60,
+		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+			c.Logger.Info("Connected to MQTT broker")
+		},
+		OnConnectError: func(err error) {
+			c.Logger.Error("Error connecting to MQTT broker: " + err.Error())
+		},
+		ClientConfig: paho.ClientConfig{
+			ClientID: "fuyuu-router-hub" + uuid.New().String(),
+			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
+				c.Logger.Debug("Received message")
+				payloadCh <- m.Payload
+			}),
+			OnClientError: func(err error) {
+				c.Logger.Error("Error from MQTT client: " + err.Error())
+			},
+			OnServerDisconnect: func(d *paho.Disconnect) {
+				if d.Properties != nil {
+					c.Logger.Error("server requested disconnect", zap.String("reason", d.Properties.ReasonString))
+				} else {
+					c.Logger.Error("server requested disconnect")
+				}
+			},
+		},
+		ConnectUsername: connectUsername,
+		ConnectPassword: connectPassword,
+	}
+
+	cm, err := autopaho.NewConnection(context.Background(), cliCfg)
 	if err != nil {
-		c.Logger.Fatal("Error: " + err.Error())
+		c.Logger.Fatal(err.Error())
 	}
-	requestClientConfig := paho.ClientConfig{
-		Conn: requestConn,
+	if err = cm.AwaitConnection(context.Background()); err != nil {
+		c.Logger.Fatal(err.Error())
 	}
-	return paho.NewClient(requestClientConfig)
+	return cm
 }
 
 func newServer(c HubConfig) server {
@@ -106,27 +158,7 @@ func newServer(c HubConfig) server {
 	mergeCh := make(chan mergeChPayload)
 	updateDBCh := make(chan updateDBChPayload, 1000)
 	errCh := make(chan error)
-	responseClient := newResponseClient(c, db, encoder, decoder, payloadCh, mergeCh, updateDBCh)
-	requestClient := newRequestClient(c)
-	connect := common.MQTTConnect(c.CommonConfig)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	c.Logger.Debug("Connecting to MQTT broker...")
-	_, err = requestClient.Connect(ctx, connect)
-	if err != nil {
-		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
-	}
-
-	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	c.Logger.Debug("Connecting to MQTT broker...")
-	_, err = responseClient.Connect(ctx, connect)
-	if err != nil {
-		c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
-	}
+	client := newClient(c, payloadCh)
 
 	var bucket objstore.Bucket
 	if c.CommonConfigV2.Networking.LargeDataPolicy == "storage_relay" {
@@ -141,20 +173,19 @@ func newServer(c HubConfig) server {
 	}
 
 	return server{
-		requestClient:  requestClient,
-		responseClient: responseClient,
-		db:             db,
-		logger:         c.Logger,
-		encoder:        encoder,
-		decoder:        decoder,
-		commonConfig:   c.CommonConfigV2,
-		bucket:         bucket,
-		merger:         data.NewMerger(),
-		dataCh:         dataCh,
-		payloadCh:      payloadCh,
-		mergeCh:        mergeCh,
-		updateDBCh:     updateDBCh,
-		errCh:          errCh,
+		client:       client,
+		db:           db,
+		logger:       c.Logger,
+		encoder:      encoder,
+		decoder:      decoder,
+		commonConfig: c.CommonConfigV2,
+		bucket:       bucket,
+		merger:       data.NewMerger(),
+		dataCh:       dataCh,
+		payloadCh:    payloadCh,
+		mergeCh:      mergeCh,
+		updateDBCh:   updateDBCh,
+		errCh:        errCh,
 	}
 }
 
@@ -196,7 +227,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	topic := topics.ResponseTopic(agentID, uuid)
 
 	s.logger.Debug("Subscribing to response topic...")
-	_, err := s.responseClient.Subscribe(ctx, &paho.Subscribe{
+	_, err := s.client.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: []paho.SubscribeOptions{
 			{
 				Topic: topic,
@@ -208,7 +239,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		s.errCh <- err
 		return
 	}
-	defer s.responseClient.Unsubscribe(ctx, &paho.Unsubscribe{
+	defer s.client.Unsubscribe(ctx, &paho.Unsubscribe{
 		Topics: []string{topic},
 	})
 
@@ -293,7 +324,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 			requestTopic := topics.RequestTopic(agentID)
 			s.logger.Debug("Publishing request...")
-			_, err = s.requestClient.Publish(context.Background(), &paho.Publish{
+			_, err = s.client.Publish(context.Background(), &paho.Publish{
 				Payload: requestPayload,
 				Topic:   requestTopic,
 			})
@@ -341,7 +372,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 		requestTopic := topics.RequestTopic(agentID)
 		s.logger.Debug("Publishing request...")
-		_, err = s.requestClient.Publish(context.Background(), &paho.Publish{
+		_, err = s.client.Publish(context.Background(), &paho.Publish{
 			Payload: requestPayload,
 			Topic:   requestTopic,
 		})
@@ -349,7 +380,6 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("Error publishing request", zap.Error(err))
 			return
 		}
-		s.logger.Debug("Subscribing to response topic...")
 	}
 
 	select {
@@ -411,32 +441,6 @@ func (s *server) startHTTP1(c HubConfig) {
 
 	go func() {
 		for {
-			// TODO: reconnect backoff
-			if s.requestClient == nil || s.responseClient == nil {
-				s.requestClient = newRequestClient(c)
-				s.responseClient = newResponseClient(c, s.db, s.encoder, s.decoder, s.payloadCh, s.mergeCh, s.updateDBCh)
-
-				connect := common.MQTTConnect(c.CommonConfig)
-
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-
-				s.logger.Debug("Connecting to MQTT broker...")
-				_, err := s.requestClient.Connect(ctx, connect)
-				if err != nil {
-					c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
-				}
-
-				ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-
-				s.logger.Debug("Connecting to MQTT broker...")
-				_, err = s.responseClient.Connect(ctx, connect)
-				if err != nil {
-					c.Logger.Fatal("Error connecting to MQTT broker: " + err.Error())
-				}
-			}
-
 			select {
 			case payload := <-s.payloadCh:
 				s.logger.Debug("Received message")
@@ -508,8 +512,6 @@ func (s *server) startHTTP1(c HubConfig) {
 				}
 			case err := <-s.errCh:
 				s.logger.Info("Error: " + err.Error())
-				s.requestClient = nil
-				s.responseClient = nil
 			}
 		}
 	}()
@@ -522,11 +524,7 @@ func (s *server) startHTTP1(c HubConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := s.requestClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
-	if err != nil {
-		c.Logger.Fatal("Error disconnecting from MQTT broker: " + err.Error())
-	}
-	err = s.responseClient.Disconnect(&paho.Disconnect{ReasonCode: 0})
+	err := s.client.Disconnect(context.Background())
 	if err != nil {
 		c.Logger.Fatal("Error disconnecting from MQTT broker: " + err.Error())
 	}

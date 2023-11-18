@@ -160,7 +160,7 @@ func newServer(c AgentConfig) server {
 					{Topic: topics.RequestTopic(c.ID), QoS: 1},
 				},
 			}); err != nil {
-				c.Logger.Fatal("Error subscribing to MQTT topic: " + err.Error())
+				c.Logger.Error("Error subscribing to MQTT topic: " + err.Error())
 			}
 			c.Logger.Info("Subscribed to MQTT topic")
 		},
@@ -475,6 +475,7 @@ func Start(c AgentConfig) {
 					return
 				}
 
+				s.logger.Debug("Publishing response")
 				_, err = s.client.Publish(context.Background(), &paho.Publish{
 					Topic:   responseTopic,
 					QoS:     0,

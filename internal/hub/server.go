@@ -247,7 +247,7 @@ func newServer(c HubConfig) server {
 		decoder:      decoder,
 		commonConfig: c.CommonConfigV2,
 		bucket:       bucket,
-		merger:       data.NewMerger(),
+		merger:       data.NewMerger(c.Logger),
 		dataCh:       dataCh,
 		payloadCh:    payloadCh,
 		mergeCh:      mergeCh,

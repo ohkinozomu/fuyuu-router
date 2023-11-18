@@ -240,7 +240,7 @@ func newServer(c AgentConfig) server {
 		encoder:      encoder,
 		decoder:      decoder,
 		bucket:       bucket,
-		merger:       data.NewMerger(),
+		merger:       data.NewMerger(c.Logger),
 	}
 }
 
@@ -379,6 +379,7 @@ func Start(c AgentConfig) {
 					s.processCh <- processChPayload
 					s.logger.Debug("Sent to processCh")
 				}
+				s.logger.Debug("Done")
 			}()
 		case processChPayload := <-s.processCh:
 			go func() {

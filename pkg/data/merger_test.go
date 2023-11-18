@@ -3,10 +3,12 @@ package data
 import (
 	"reflect"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func TestNewMerger(t *testing.T) {
-	merger := NewMerger()
+	merger := NewMerger(&zap.Logger{})
 	if merger == nil {
 		t.Error("NewMerger returned nil")
 	}
@@ -16,7 +18,7 @@ func TestNewMerger(t *testing.T) {
 }
 
 func TestAddChunkAndIsComplete(t *testing.T) {
-	merger := NewMerger()
+	merger := NewMerger(&zap.Logger{})
 	chunk := &HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  1,
@@ -47,7 +49,7 @@ func TestAddChunkAndIsComplete(t *testing.T) {
 }
 
 func TestGetCombinedData(t *testing.T) {
-	merger := NewMerger()
+	merger := NewMerger(&zap.Logger{})
 	chunk1 := &HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  1,

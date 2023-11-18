@@ -46,12 +46,13 @@ type server struct {
 	bucket         objstore.Bucket
 	merger         *data.Merger
 	dataCh         chan []byte
+	payloadCh      chan []byte
 	mergeCh        chan mergeChPayload
 	updateDBCh     chan updateDBChPayload
 	errCh          chan error
 }
 
-func newResponseClient(c HubConfig, db *badger.DB, encoder *zstd.Encoder, decoder *zstd.Decoder, mergeCh chan mergeChPayload, updateDBCh chan updateDBChPayload) *paho.Client {
+func newResponseClient(c HubConfig, db *badger.DB, encoder *zstd.Encoder, decoder *zstd.Decoder, payloadCh chan []byte, mergeCh chan mergeChPayload, updateDBCh chan updateDBChPayload) *paho.Client {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	c.Logger.Debug("Connecting to MQTT broker...")
@@ -61,7 +62,7 @@ func newResponseClient(c HubConfig, db *badger.DB, encoder *zstd.Encoder, decode
 	}
 	responseClientConfig := paho.ClientConfig{
 		Conn:   responseConn,
-		Router: NewRouter(db, c.Logger, c.CommonConfigV2, encoder, decoder, mergeCh, updateDBCh),
+		Router: NewRouter(payloadCh),
 	}
 	return paho.NewClient(responseClientConfig)
 }
@@ -101,10 +102,11 @@ func newServer(c HubConfig) server {
 	}
 
 	dataCh := make(chan []byte)
+	payloadCh := make(chan []byte, 1000)
 	mergeCh := make(chan mergeChPayload)
-	updateDBCh := make(chan updateDBChPayload)
+	updateDBCh := make(chan updateDBChPayload, 1000)
 	errCh := make(chan error)
-	responseClient := newResponseClient(c, db, encoder, decoder, mergeCh, updateDBCh)
+	responseClient := newResponseClient(c, db, encoder, decoder, payloadCh, mergeCh, updateDBCh)
 	requestClient := newRequestClient(c)
 	connect := common.MQTTConnect(c.CommonConfig)
 
@@ -149,6 +151,7 @@ func newServer(c HubConfig) server {
 		bucket:         bucket,
 		merger:         data.NewMerger(),
 		dataCh:         dataCh,
+		payloadCh:      payloadCh,
 		mergeCh:        mergeCh,
 		updateDBCh:     updateDBCh,
 		errCh:          errCh,
@@ -411,7 +414,7 @@ func (s *server) startHTTP1(c HubConfig) {
 			// TODO: reconnect backoff
 			if s.requestClient == nil || s.responseClient == nil {
 				s.requestClient = newRequestClient(c)
-				s.responseClient = newResponseClient(c, s.db, s.encoder, s.decoder, s.mergeCh, s.updateDBCh)
+				s.responseClient = newResponseClient(c, s.db, s.encoder, s.decoder, s.payloadCh, s.mergeCh, s.updateDBCh)
 
 				connect := common.MQTTConnect(c.CommonConfig)
 
@@ -435,6 +438,31 @@ func (s *server) startHTTP1(c HubConfig) {
 			}
 
 			select {
+			case payload := <-s.payloadCh:
+				s.logger.Debug("Received message")
+				httpResponsePacket, err := data.DeserializeResponsePacket(payload, s.commonConfig.Networking.Format)
+				if err != nil {
+					s.logger.Info("Error deserializing response packet: " + err.Error())
+					return
+				}
+
+				httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), s.commonConfig.Networking.Format, nil)
+				if err != nil {
+					s.logger.Info("Error deserializing HTTP response data: " + err.Error())
+					return
+				}
+				if httpResponseData.Body.Type == "split" {
+					s.mergeCh <- mergeChPayload{
+						responsePacket:   httpResponsePacket,
+						httpResponseData: httpResponseData,
+					}
+				} else {
+					s.logger.Debug("Received non-split message")
+					s.updateDBCh <- updateDBChPayload{
+						responsePacket:   httpResponsePacket,
+						httpResponseData: httpResponseData,
+					}
+				}
 			case mergeChPayload := <-s.mergeCh:
 				chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpResponseData.Body.Body, s.commonConfig.Networking.Format)
 				if err != nil {

@@ -39,11 +39,16 @@ type Split struct {
 	ChunkBytes int `mapstructure:"chunk_bytes"`
 }
 
+type Telemetry struct {
+	Enabled bool `mapstructure:"enabled"`
+}
+
 type CommonConfigV2 struct {
 	Profiling    Profiling    `mapstructure:"profiling"`
 	Networking   Networking   `mapstructure:"networking"`
 	StorageRelay StorageRelay `mapstructure:"storage_relay"`
 	Split        Split        `mapstructure:"split"`
+	Telemetry    Telemetry    `mapstructure:"telemetry"`
 }
 
 func CreateConfig(configPath string) (CommonConfigV2, error) {

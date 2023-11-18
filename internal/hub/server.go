@@ -26,6 +26,9 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"github.com/thanos-io/objstore"
 	objstoreclient "github.com/thanos-io/objstore/client"
+	"go.opentelemetry.io/otel/exporters/prometheus"
+	api "go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap"
 )
 
@@ -153,12 +156,76 @@ func newServer(c HubConfig) server {
 		}
 	}
 
-	dataCh := make(chan []byte)
+	dataCh := make(chan []byte, 1000)
 	payloadCh := make(chan []byte, 1000)
-	mergeCh := make(chan mergeChPayload)
+	mergeCh := make(chan mergeChPayload, 1000)
 	updateDBCh := make(chan updateDBChPayload, 1000)
 	errCh := make(chan error)
 	client := newClient(c, payloadCh)
+
+	if c.CommonConfigV2.Telemetry.Enabled {
+		exporter, err := prometheus.New()
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		meterName := "fuyuu-router-hub"
+		provider := metric.NewMeterProvider(metric.WithReader(exporter))
+		meter := provider.Meter(meterName)
+
+		dataChSize, err := meter.Float64ObservableGauge("buffered_data_channel_size", api.WithDescription("The size of the buffered dataCh"))
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
+			n := float64(len(dataCh))
+			o.ObserveFloat64(dataChSize, n)
+			return nil
+		}, dataChSize)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		payloadChSize, err := meter.Float64ObservableGauge("buffered_payload_channel_size", api.WithDescription("The size of the buffered payloadCh"))
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
+			n := float64(len(payloadCh))
+			o.ObserveFloat64(payloadChSize, n)
+			return nil
+		}, payloadChSize)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		mergeChSize, err := meter.Float64ObservableGauge("buffered_merge_channel_size", api.WithDescription("The size of the buffered mergeCh"))
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
+			n := float64(len(mergeCh))
+			o.ObserveFloat64(mergeChSize, n)
+			return nil
+		}, mergeChSize)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		updateDBChSize, err := meter.Float64ObservableGauge("buffered_update_db_channel_size", api.WithDescription("The size of the buffered updateDBCh"))
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
+			n := float64(len(updateDBCh))
+			o.ObserveFloat64(updateDBChSize, n)
+			return nil
+		}, updateDBChSize)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		go common.ServeMetrics(c.Logger)
+	}
 
 	var bucket objstore.Bucket
 	if c.CommonConfigV2.Networking.LargeDataPolicy == "storage_relay" {

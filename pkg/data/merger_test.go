@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -113,5 +114,61 @@ func TestGetCombinedData(t *testing.T) {
 	expected := []byte("part1part2")
 	if !reflect.DeepEqual(combined, expected) {
 		t.Errorf("GetCombinedData returned %v, expected %v", combined, expected)
+	}
+}
+
+func TestSplitChunk(t *testing.T) {
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	loggerConfig := zap.Config{
+		Level:            zap.NewAtomicLevel(),
+		Encoding:         "json",
+		EncoderConfig:    encoderConfig,
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+
+	logger, err := loggerConfig.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		body      []byte
+		chunkByte int
+		want      [][]byte
+	}{
+		{
+			name:      "Empty input",
+			body:      []byte(""),
+			chunkByte: 4,
+			want:      nil,
+		},
+		{
+			name:      "Regular input, complete division",
+			body:      []byte("abcdef"),
+			chunkByte: 2,
+			want:      [][]byte{[]byte("ab"), []byte("cd"), []byte("ef")},
+		},
+		{
+			name:      "Regular input, incomplete division",
+			body:      []byte("abcdefgh"),
+			chunkByte: 3,
+			want:      [][]byte{[]byte("abc"), []byte("def"), []byte("gh")},
+		},
+		{
+			name:      "chunkByte larger than input",
+			body:      []byte("abc"),
+			chunkByte: 10,
+			want:      [][]byte{[]byte("abc")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SplitChunk(tt.body, tt.chunkByte, logger)
+			assert.Equal(t, tt.want, got)
+		})
 	}
 }

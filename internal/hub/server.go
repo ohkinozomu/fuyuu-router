@@ -350,14 +350,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.logger.Debug("split threshold: " + fmt.Sprintf("%d", s.commonConfig.Split.ChunkBytes))
 	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
 		s.logger.Debug("Splitting request body...")
-		var chunks [][]byte
-		for i := 0; i < len(bodyBytes); i += s.commonConfig.Split.ChunkBytes {
-			end := i + s.commonConfig.Split.ChunkBytes
-			if end > len(bodyBytes) {
-				end = len(bodyBytes)
-			}
-			chunks = append(chunks, bodyBytes[i:end])
-		}
+		chunks := data.SplitChunk(bodyBytes, s.commonConfig.Split.ChunkBytes, s.logger)
 
 		for sequence, c := range chunks {
 			httpBodyChunk := data.HTTPBodyChunk{

@@ -113,14 +113,6 @@ Skupper is great, but I had a few complaints.
 
 ![Skupper comparison](docs/skupper-comparison.svg)
 
-### Why using Badger?
-
-To share channel between the HTTP handler and paho.golang's Router, it is necessary to create a Router for every HTTP request.
-
-Making a TCP connection and MQTT CONNECT for every HTTP request is disadvantageous in terms of performance(0.5 second delay in rough measurement).
-
-First, a TCP connection and MQTT CONNECT are established. Then, for every HTTP request, Badger's Subscribe is executed.
-
 ### Are there problems with MQTT topics per HTTP request?
 
 I referred to the following articles:

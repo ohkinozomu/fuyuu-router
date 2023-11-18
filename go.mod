@@ -3,12 +3,13 @@ module github.com/ohkinozomu/fuyuu-router
 go 1.21.1
 
 require (
-	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/eclipse/paho.golang v0.12.1-0.20231115041409-5f4de1dba813
 	github.com/go-playground/validator/v10 v10.16.0
 	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.1
 	github.com/klauspost/compress v1.17.3
+	github.com/mustafaturan/bus/v3 v3.0.3
+	github.com/mustafaturan/monoton/v2 v2.0.2
 	github.com/ohkinozomu/neutral-cp v0.1.3
 	github.com/prometheus/client_golang v1.17.0
 	github.com/spf13/cobra v1.8.0
@@ -51,7 +52,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/clbanning/mxj v1.8.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/efficientgo/core v1.0.0-rc.0.0.20221201130417-ba593f67d2a4 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
@@ -63,13 +63,9 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
-	github.com/golang/glog v1.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/flatbuffers v1.12.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20230705174524-200ffdc848b8 // indirect

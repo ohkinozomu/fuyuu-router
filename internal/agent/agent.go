@@ -360,24 +360,26 @@ func Start(c AgentConfig) {
 				}
 			}()
 		case mergeChPayload := <-s.mergeCh:
-			chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpRequestData.Body.Body, s.commonConfig.Networking.Format)
-			if err != nil {
-				s.logger.Error("Error deserializing HTTP body chunk", zap.Error(err))
-				return
-			}
-			s.logger.Debug("Received chunk")
-			s.merger.AddChunk(chunk)
+			go func() {
+				chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpRequestData.Body.Body, s.commonConfig.Networking.Format)
+				if err != nil {
+					s.logger.Error("Error deserializing HTTP body chunk", zap.Error(err))
+					return
+				}
+				s.logger.Debug("Received chunk")
+				s.merger.AddChunk(chunk)
 
-			if s.merger.IsComplete(chunk) {
-				s.logger.Debug("Received last chunk")
-				combined := s.merger.GetCombinedData(chunk)
-				s.logger.Debug("Combined data")
-				mergeChPayload.httpRequestData.Body.Body = combined
-				processChPayload := processChPayload(mergeChPayload)
-				s.logger.Debug("Sending to processCh")
-				s.processCh <- processChPayload
-				s.logger.Debug("Sent to processCh")
-			}
+				if s.merger.IsComplete(chunk) {
+					s.logger.Debug("Received last chunk")
+					combined := s.merger.GetCombinedData(chunk)
+					s.logger.Debug("Combined data")
+					mergeChPayload.httpRequestData.Body.Body = combined
+					processChPayload := processChPayload(mergeChPayload)
+					s.logger.Debug("Sending to processCh")
+					s.processCh <- processChPayload
+					s.logger.Debug("Sent to processCh")
+				}
+			}()
 		case processChPayload := <-s.processCh:
 			go func() {
 				s.logger.Debug("Processing request")

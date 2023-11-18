@@ -18,6 +18,9 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"github.com/thanos-io/objstore"
 	objstoreclient "github.com/thanos-io/objstore/client"
+	"go.opentelemetry.io/otel/exporters/prometheus"
+	api "go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
@@ -274,6 +277,57 @@ func Start(c AgentConfig) {
 	}
 
 	s := newServer(c)
+
+	if c.CommonConfigV2.Telemetry.Enabled {
+		exporter, err := prometheus.New()
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		meterName := "fuyuu-router-agent"
+		provider := metric.NewMeterProvider(metric.WithReader(exporter))
+		meter := provider.Meter(meterName)
+
+		payloadChSize, err := meter.Float64ObservableGauge("buffered_payload_channel_size", api.WithDescription("The size of the buffered payloadCh"))
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
+			n := float64(len(s.payloadCh))
+			o.ObserveFloat64(payloadChSize, n)
+			return nil
+		}, payloadChSize)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		mergeChSize, err := meter.Float64ObservableGauge("buffered_merge_channel_size", api.WithDescription("The size of the buffered mergeCh"))
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
+			n := float64(len(s.mergeCh))
+			o.ObserveFloat64(mergeChSize, n)
+			return nil
+		}, mergeChSize)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		processChSize, err := meter.Float64ObservableGauge("buffered_process_channel_size", api.WithDescription("The size of the buffered processCh"))
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
+			n := float64(len(s.processCh))
+			o.ObserveFloat64(processChSize, n)
+			return nil
+		}, processChSize)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
+		go common.ServeMetrics(c.Logger)
+	}
 
 	for {
 		select {

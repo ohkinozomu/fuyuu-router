@@ -5,10 +5,25 @@ import (
 	"testing"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestNewMerger(t *testing.T) {
-	merger := NewMerger(&zap.Logger{})
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	loggerConfig := zap.Config{
+		Level:            zap.NewAtomicLevel(),
+		Encoding:         "json",
+		EncoderConfig:    encoderConfig,
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+
+	logger, err := loggerConfig.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	merger := NewMerger(logger)
 	if merger == nil {
 		t.Error("NewMerger returned nil")
 	}
@@ -18,7 +33,21 @@ func TestNewMerger(t *testing.T) {
 }
 
 func TestAddChunkAndIsComplete(t *testing.T) {
-	merger := NewMerger(&zap.Logger{})
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	loggerConfig := zap.Config{
+		Level:            zap.NewAtomicLevel(),
+		Encoding:         "json",
+		EncoderConfig:    encoderConfig,
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+
+	logger, err := loggerConfig.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	merger := NewMerger(logger)
 	chunk := &HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  1,
@@ -49,7 +78,21 @@ func TestAddChunkAndIsComplete(t *testing.T) {
 }
 
 func TestGetCombinedData(t *testing.T) {
-	merger := NewMerger(&zap.Logger{})
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	loggerConfig := zap.Config{
+		Level:            zap.NewAtomicLevel(),
+		Encoding:         "json",
+		EncoderConfig:    encoderConfig,
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+
+	logger, err := loggerConfig.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	merger := NewMerger(logger)
 	chunk1 := &HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  1,

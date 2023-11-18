@@ -161,7 +161,7 @@ func newServer(c AgentConfig) server {
 
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
 				Subscriptions: []paho.SubscribeOptions{
-					{Topic: topics.RequestTopic(c.ID), QoS: 1},
+					{Topic: topics.RequestTopic(c.ID), QoS: 0},
 				},
 			}); err != nil {
 				c.Logger.Error("Error subscribing to MQTT topic: " + err.Error())

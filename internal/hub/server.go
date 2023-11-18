@@ -268,6 +268,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Load Balancing
 	// Now, select randomly
 	agentID := agentIDs[rand.Intn(len(agentIDs))]
+	s.logger.Debug("Selected agent: " + agentID)
 
 	timeoutDuration := 60 * time.Second
 	ctx, cancel := context.WithTimeout(r.Context(), timeoutDuration)
@@ -402,6 +403,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				s.logger.Error("Error publishing request", zap.Error(err))
 				return
 			}
+			s.logger.Debug("Published request")
 		}
 	} else {
 		if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {

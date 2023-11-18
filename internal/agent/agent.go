@@ -12,6 +12,7 @@ import (
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
@@ -171,7 +172,7 @@ func newServer(c AgentConfig) server {
 			c.Logger.Error("Error connecting to MQTT broker: " + err.Error())
 		},
 		ClientConfig: paho.ClientConfig{
-			ClientID: c.ID,
+			ClientID: c.ID + "-" + uuid.New().String(),
 			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 				c.Logger.Debug("Received message")
 				payloadCh <- m.Payload

@@ -106,7 +106,7 @@ func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
 			c.Logger.Error("Error connecting to MQTT broker: " + err.Error())
 		},
 		ClientConfig: paho.ClientConfig{
-			ClientID: "fuyuu-router-hub" + uuid.New().String(),
+			ClientID: "fuyuu-router-hub" + "-" + uuid.New().String(),
 			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 				c.Logger.Debug("Received message")
 				payloadCh <- m.Payload
@@ -160,7 +160,7 @@ func newServer(c HubConfig) server {
 	payloadCh := make(chan []byte, 1000)
 	mergeCh := make(chan mergeChPayload, 1000)
 	updateDBCh := make(chan updateDBChPayload, 1000)
-	errCh := make(chan error)
+	errCh := make(chan error, 1000)
 	client := newClient(c, payloadCh)
 
 	if c.CommonConfigV2.Telemetry.Enabled {

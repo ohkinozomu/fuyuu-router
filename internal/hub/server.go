@@ -475,6 +475,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func Start(c HubConfig) {
+	c.Logger.Debug("config: " + fmt.Sprintf("%+v", c))
 	s := newServer(c)
 
 	if c.Protocol != "http1" {

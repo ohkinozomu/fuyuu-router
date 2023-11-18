@@ -138,7 +138,11 @@ func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
 
 func newServer(c HubConfig) server {
 	c.Logger.Debug("Opening database...")
-	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true).WithLogger(common.NewZapToBadgerAdapter(c.Logger)))
+	db, err := badger.Open(
+		badger.DefaultOptions("").
+			WithMemTableSize(256 << 20).
+			WithInMemory(true).
+			WithLogger(common.NewZapToBadgerAdapter(c.Logger)))
 	if err != nil {
 		c.Logger.Fatal("Error opening database: " + err.Error())
 	}
@@ -516,74 +520,80 @@ func (s *server) startHTTP1(c HubConfig) {
 		for {
 			select {
 			case payload := <-s.payloadCh:
-				s.logger.Debug("Received message")
-				httpResponsePacket, err := data.DeserializeResponsePacket(payload, s.commonConfig.Networking.Format)
-				if err != nil {
-					s.logger.Info("Error deserializing response packet: " + err.Error())
-					return
-				}
-
-				httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), s.commonConfig.Networking.Format, nil)
-				if err != nil {
-					s.logger.Info("Error deserializing HTTP response data: " + err.Error())
-					return
-				}
-				if httpResponseData.Body.Type == "split" {
-					s.logger.Debug("Received split message")
-					s.mergeCh <- mergeChPayload{
-						responsePacket:   httpResponsePacket,
-						httpResponseData: httpResponseData,
-					}
-				} else {
-					s.logger.Debug("Received non-split message")
-					s.updateDBCh <- updateDBChPayload{
-						responsePacket:   httpResponsePacket,
-						httpResponseData: httpResponseData,
-					}
-				}
-			case mergeChPayload := <-s.mergeCh:
-				chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpResponseData.Body.Body, s.commonConfig.Networking.Format)
-				if err != nil {
-					s.logger.Error("Error deserializing HTTP body chunk", zap.Error(err))
-					return
-				}
-				s.merger.AddChunk(chunk)
-
-				if s.merger.IsComplete(chunk) {
-					combined := s.merger.GetCombinedData(chunk)
-					mergeChPayload.httpResponseData.Body.Body = combined
-					s.updateDBCh <- updateDBChPayload(mergeChPayload)
-				}
-			case updateDBChPayload := <-s.updateDBCh:
-				s.logger.Debug("Writing response to database...")
-
-				if updateDBChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
-					var err error
-					updateDBChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(updateDBChPayload.httpResponseData.Body.Body, nil)
+				go func() {
+					s.logger.Debug("Received message")
+					httpResponsePacket, err := data.DeserializeResponsePacket(payload, s.commonConfig.Networking.Format)
 					if err != nil {
-						s.logger.Info("Error decompressing message: " + err.Error())
+						s.logger.Info("Error deserializing response packet: " + err.Error())
 						return
 					}
-				}
 
-				b, err := data.SerializeHTTPResponseData(updateDBChPayload.httpResponseData, s.commonConfig.Networking.Format)
-				if err != nil {
-					s.logger.Info("Error serializing HTTP response data: " + err.Error())
-					return
-				}
-
-				err = s.db.Update(func(txn *badger.Txn) error {
-					e := badger.NewEntry([]byte(updateDBChPayload.responsePacket.RequestId), b).WithTTL(time.Minute * 5)
-					err := txn.SetEntry(e)
+					httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), s.commonConfig.Networking.Format, nil)
 					if err != nil {
-						return err
+						s.logger.Info("Error deserializing HTTP response data: " + err.Error())
+						return
 					}
-					return nil
-				})
-				if err != nil {
-					s.logger.Info("Error setting key in database: " + err.Error())
-					return
-				}
+					if httpResponseData.Body.Type == "split" {
+						s.logger.Debug("Received split message")
+						s.mergeCh <- mergeChPayload{
+							responsePacket:   httpResponsePacket,
+							httpResponseData: httpResponseData,
+						}
+					} else {
+						s.logger.Debug("Received non-split message")
+						s.updateDBCh <- updateDBChPayload{
+							responsePacket:   httpResponsePacket,
+							httpResponseData: httpResponseData,
+						}
+					}
+				}()
+			case mergeChPayload := <-s.mergeCh:
+				go func() {
+					chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpResponseData.Body.Body, s.commonConfig.Networking.Format)
+					if err != nil {
+						s.logger.Error("Error deserializing HTTP body chunk", zap.Error(err))
+						return
+					}
+					s.merger.AddChunk(chunk)
+
+					if s.merger.IsComplete(chunk) {
+						combined := s.merger.GetCombinedData(chunk)
+						mergeChPayload.httpResponseData.Body.Body = combined
+						s.updateDBCh <- updateDBChPayload(mergeChPayload)
+					}
+				}()
+			case updateDBChPayload := <-s.updateDBCh:
+				go func() {
+					s.logger.Debug("Writing response to database...")
+
+					if updateDBChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
+						var err error
+						updateDBChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(updateDBChPayload.httpResponseData.Body.Body, nil)
+						if err != nil {
+							s.logger.Info("Error decompressing message: " + err.Error())
+							return
+						}
+					}
+
+					b, err := data.SerializeHTTPResponseData(updateDBChPayload.httpResponseData, s.commonConfig.Networking.Format)
+					if err != nil {
+						s.logger.Info("Error serializing HTTP response data: " + err.Error())
+						return
+					}
+
+					err = s.db.Update(func(txn *badger.Txn) error {
+						e := badger.NewEntry([]byte(updateDBChPayload.responsePacket.RequestId), b).WithTTL(time.Minute * 5)
+						err := txn.SetEntry(e)
+						if err != nil {
+							return err
+						}
+						return nil
+					})
+					if err != nil {
+						s.logger.Info("Error setting key in database: " + err.Error())
+						return
+					}
+				}()
 			case err := <-s.errCh:
 				s.logger.Info("Error: " + err.Error())
 			}

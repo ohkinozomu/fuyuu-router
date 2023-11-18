@@ -421,7 +421,7 @@ func Start(c AgentConfig) {
 					}
 
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
-						chunks := data.SplitChunk(httpResponse, s.commonConfig.Split.ChunkBytes, s.logger)
+						chunks := data.SplitChunk(httpResponse, s.commonConfig.Split.ChunkBytes)
 
 						for sequence, c := range chunks {
 							httpBodyChunk := data.HTTPBodyChunk{

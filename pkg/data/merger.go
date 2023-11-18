@@ -25,7 +25,6 @@ func (m *Merger) AddChunk(chunk *HTTPBodyChunk) {
 	// Avoid concurrent map writes
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.logger.Debug("Adding chunk", zap.String("request_id", chunk.RequestId), zap.Int("sequence", int(chunk.Sequence)), zap.Int("total", int(chunk.Total)), zap.String("data", string(chunk.Data)))
 	if _, exists := m.chunks[chunk.RequestId]; !exists {
 		m.chunks[chunk.RequestId] = make(map[int][]byte)
 	}
@@ -64,7 +63,7 @@ func bytesArrayToStringArray(b [][]byte) []string {
 	return stringArray
 }
 
-func SplitChunk(body []byte, chunkByte int, logger *zap.Logger) [][]byte {
+func SplitChunk(body []byte, chunkByte int) [][]byte {
 	var chunks [][]byte
 	for i := 0; i < len(body); i += chunkByte {
 		end := i + chunkByte
@@ -73,6 +72,5 @@ func SplitChunk(body []byte, chunkByte int, logger *zap.Logger) [][]byte {
 		}
 		chunks = append(chunks, body[i:end])
 	}
-	logger.Sugar().Debug(zap.Any("chunks", bytesArrayToStringArray(chunks)))
 	return chunks
 }

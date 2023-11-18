@@ -118,21 +118,6 @@ func TestGetCombinedData(t *testing.T) {
 }
 
 func TestSplitChunk(t *testing.T) {
-	encoderConfig := zap.NewProductionEncoderConfig()
-	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	loggerConfig := zap.Config{
-		Level:            zap.NewAtomicLevel(),
-		Encoding:         "json",
-		EncoderConfig:    encoderConfig,
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
-	}
-
-	logger, err := loggerConfig.Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	tests := []struct {
 		name      string
 		body      []byte
@@ -167,7 +152,7 @@ func TestSplitChunk(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SplitChunk(tt.body, tt.chunkByte, logger)
+			got := SplitChunk(tt.body, tt.chunkByte)
 			assert.Equal(t, tt.want, got)
 		})
 	}

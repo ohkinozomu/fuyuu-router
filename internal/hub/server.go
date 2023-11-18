@@ -52,7 +52,6 @@ type server struct {
 	commonConfig common.CommonConfigV2
 	bucket       objstore.Bucket
 	merger       *data.Merger
-	dataCh       chan []byte
 	payloadCh    chan []byte
 	mergeCh      chan mergeChPayload
 	updateDBCh   chan updateDBChPayload
@@ -170,7 +169,6 @@ func newServer(c HubConfig) server {
 		}
 	}
 
-	dataCh := make(chan []byte, 1000)
 	payloadCh := make(chan []byte, 1000)
 	mergeCh := make(chan mergeChPayload, 1000)
 	updateDBCh := make(chan updateDBChPayload, 1000)
@@ -185,19 +183,6 @@ func newServer(c HubConfig) server {
 		meterName := "fuyuu-router-hub"
 		provider := metric.NewMeterProvider(metric.WithReader(exporter))
 		meter := provider.Meter(meterName)
-
-		dataChSize, err := meter.Float64ObservableGauge("buffered_data_channel_size", api.WithDescription("The size of the buffered dataCh"))
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
-			n := float64(len(dataCh))
-			o.ObserveFloat64(dataChSize, n)
-			return nil
-		}, dataChSize)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
 
 		payloadChSize, err := meter.Float64ObservableGauge("buffered_payload_channel_size", api.WithDescription("The size of the buffered payloadCh"))
 		if err != nil {
@@ -262,7 +247,6 @@ func newServer(c HubConfig) server {
 		commonConfig: c.CommonConfigV2,
 		bucket:       bucket,
 		merger:       data.NewMerger(c.Logger),
-		dataCh:       dataCh,
 		payloadCh:    payloadCh,
 		mergeCh:      mergeCh,
 		updateDBCh:   updateDBCh,
@@ -325,11 +309,12 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Topics: []string{topic},
 	})
 
+	dataCh := make(chan []byte)
 	s.bus.RegisterTopics(uuid)
 	handler := bus.Handler{
 		Handle: func(ctx context.Context, e bus.Event) {
 			s.logger.Debug("Received message from bus")
-			s.dataCh <- e.Data.([]byte)
+			dataCh <- e.Data.([]byte)
 		},
 		Matcher: uuid,
 	}
@@ -457,7 +442,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	select {
-	case value := <-s.dataCh:
+	case value := <-dataCh:
 		s.logger.Debug("Writing response...")
 		httpResponseData, err := data.DeserializeHTTPResponseData(value, s.commonConfig.Networking.Format, s.bucket)
 		if err != nil {
@@ -608,7 +593,6 @@ func (s *server) startHTTP1(c HubConfig) {
 	if err != nil {
 		c.Logger.Fatal("Error disconnecting from MQTT broker: " + err.Error())
 	}
-	close(s.dataCh)
 	close(s.mergeCh)
 
 	if err := srv.Shutdown(ctx); err != nil {

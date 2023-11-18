@@ -583,6 +583,9 @@ func (s *server) startHTTP1(c HubConfig) {
 
 					err = s.bus.Emit(context.Background(), updateDBChPayload.responsePacket.RequestId, b)
 					if err != nil {
+						if strings.Contains(err.Error(), fmt.Sprintf("bus: topic(%s) not found", updateDBChPayload.responsePacket.RequestId)) {
+							return
+						}
 						s.logger.Info("Error setting key in database: " + err.Error())
 						return
 					}

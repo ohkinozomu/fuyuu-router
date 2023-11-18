@@ -337,6 +337,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var body data.HTTPBody
 
 	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
+		s.logger.Debug("Splitting request body...")
 		var chunks [][]byte
 		for i := 0; i < len(bodyBytes); i += s.commonConfig.Split.ChunkBytes {
 			end := i + s.commonConfig.Split.ChunkBytes
@@ -523,6 +524,7 @@ func (s *server) startHTTP1(c HubConfig) {
 					return
 				}
 				if httpResponseData.Body.Type == "split" {
+					s.logger.Debug("Received split message")
 					s.mergeCh <- mergeChPayload{
 						responsePacket:   httpResponsePacket,
 						httpResponseData: httpResponseData,

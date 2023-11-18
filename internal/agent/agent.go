@@ -87,8 +87,8 @@ func newServer(c AgentConfig) server {
 		c.Logger.Fatal("Error parsing MQTT broker URL: " + err.Error())
 	}
 
-	payloadCh := make(chan []byte)
-	mergeCh := make(chan mergeChPayload)
+	payloadCh := make(chan []byte, 1000)
+	mergeCh := make(chan mergeChPayload, 1000)
 	processCh := make(chan processChPayload, 1000)
 
 	var connectUsername string

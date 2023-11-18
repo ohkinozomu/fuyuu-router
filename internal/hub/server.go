@@ -14,13 +14,14 @@ import (
 	"syscall"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v4"
-	"github.com/dgraph-io/badger/v4/pb"
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/klauspost/compress/zstd"
+	"github.com/mustafaturan/bus/v3"
+	"github.com/mustafaturan/monoton/v2"
+	"github.com/mustafaturan/monoton/v2/sequencer"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
@@ -44,7 +45,7 @@ type updateDBChPayload struct {
 
 type server struct {
 	client       *autopaho.ConnectionManager
-	db           *badger.DB
+	bus          *bus.Bus
 	logger       *zap.Logger
 	encoder      *zstd.Encoder
 	decoder      *zstd.Decoder
@@ -136,19 +137,28 @@ func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
 	return cm
 }
 
-func newServer(c HubConfig) server {
-	c.Logger.Debug("Opening database...")
-	db, err := badger.Open(
-		badger.DefaultOptions("").
-			WithMemTableSize(256 << 20).
-			WithInMemory(true).
-			WithLogger(common.NewZapToBadgerAdapter(c.Logger)))
+func newBus() *bus.Bus {
+	node := uint64(1)
+	initialTime := uint64(time.Now().Unix())
+	m, err := monoton.New(sequencer.NewMillisecond(), node, initialTime)
 	if err != nil {
-		c.Logger.Fatal("Error opening database: " + err.Error())
+		panic(err)
 	}
 
+	var idGenerator bus.Next = m.Next
+
+	b, err := bus.NewBus(idGenerator)
+	if err != nil {
+		panic(err)
+	}
+
+	return b
+}
+
+func newServer(c HubConfig) server {
 	var encoder *zstd.Encoder
 	var decoder *zstd.Decoder
+	var err error
 	if c.CommonConfigV2.Networking.Compress == "zstd" {
 		encoder, err = zstd.NewWriter(nil)
 		if err != nil {
@@ -245,7 +255,7 @@ func newServer(c HubConfig) server {
 
 	return server{
 		client:       client,
-		db:           db,
+		bus:          newBus(),
 		logger:       c.Logger,
 		encoder:      encoder,
 		decoder:      decoder,
@@ -315,20 +325,15 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Topics: []string{topic},
 	})
 
-	match := pb.Match{Prefix: []byte(uuid), IgnoreBytes: ""}
-
-	go func() {
-		err := s.db.Subscribe(ctx, func(kvs *pb.KVList) error {
-			s.logger.Debug("Received data from database...")
-			s.dataCh <- kvs.Kv[0].GetValue()
-			return nil
-		}, []pb.Match{match})
-		if err != nil {
-			if err != context.Canceled {
-				s.logger.Info("Error subscribing to database: " + err.Error())
-			}
-		}
-	}()
+	s.bus.RegisterTopics(uuid)
+	handler := bus.Handler{
+		Handle: func(ctx context.Context, e bus.Event) {
+			s.logger.Debug("Received message from bus")
+			s.dataCh <- e.Data.([]byte)
+		},
+		Matcher: uuid,
+	}
+	s.bus.RegisterHandler(uuid, handler)
 
 	bodyBytes := make([]byte, r.ContentLength)
 	r.Body.Read(bodyBytes)
@@ -478,6 +483,8 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.bus.DeregisterHandler(uuid)
+	s.bus.DeregisterTopics(uuid)
 }
 
 func Start(c HubConfig) {
@@ -581,14 +588,7 @@ func (s *server) startHTTP1(c HubConfig) {
 						return
 					}
 
-					err = s.db.Update(func(txn *badger.Txn) error {
-						e := badger.NewEntry([]byte(updateDBChPayload.responsePacket.RequestId), b).WithTTL(time.Minute * 5)
-						err := txn.SetEntry(e)
-						if err != nil {
-							return err
-						}
-						return nil
-					})
+					err = s.bus.Emit(context.Background(), updateDBChPayload.responsePacket.RequestId, b)
 					if err != nil {
 						s.logger.Info("Error setting key in database: " + err.Error())
 						return
@@ -611,10 +611,6 @@ func (s *server) startHTTP1(c HubConfig) {
 	err := s.client.Disconnect(context.Background())
 	if err != nil {
 		c.Logger.Fatal("Error disconnecting from MQTT broker: " + err.Error())
-	}
-	err = s.db.Close()
-	if err != nil {
-		c.Logger.Fatal("Error closing database: " + err.Error())
 	}
 	close(s.dataCh)
 	close(s.mergeCh)

@@ -4,6 +4,7 @@ import (
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho/log"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
@@ -65,4 +66,4 @@ func (r *Router) RegisterHandler(string, paho.MessageHandler) {}
 
 func (r *Router) UnregisterHandler(string) {}
 
-func (r *Router) SetDebugLogger(paho.Logger) {}
+func (r *Router) SetDebugLogger(log.Logger) {}

@@ -85,6 +85,7 @@ var hubCmd = &cobra.Command{
 					Registry:        registry,
 					ApplicationName: "fuyuu-router-hub",
 					ServerAddress:   config.Profiling.ServerAddress,
+					Version:         "TODO",
 				}
 				ncp := ncp.NeutralCP{Config: c}
 

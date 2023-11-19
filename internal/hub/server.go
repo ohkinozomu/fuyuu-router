@@ -109,6 +109,7 @@ func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
 			ClientID: "fuyuu-router-hub" + "-" + uuid.New().String(),
 			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 				c.Logger.Debug("Received message")
+				c.Logger.Debug("payload: " + string(m.Payload))
 				payloadCh <- m.Payload
 			}),
 			OnClientError: func(err error) {
@@ -309,12 +310,12 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Topics: []string{topic},
 	})
 
-	dataCh := make(chan []byte)
+	dataCh := make(chan *data.HTTPResponseData)
 	s.bus.RegisterTopics(uuid)
 	handler := bus.Handler{
 		Handle: func(ctx context.Context, e bus.Event) {
 			s.logger.Debug("Received message from bus")
-			dataCh <- e.Data.([]byte)
+			dataCh <- e.Data.(*data.HTTPResponseData)
 		},
 		Matcher: uuid,
 	}
@@ -442,17 +443,10 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	select {
-	case value := <-dataCh:
+	case httpResponseData := <-dataCh:
 		s.logger.Debug("Writing response...")
-		httpResponseData, err := data.DeserializeHTTPResponseData(value, s.commonConfig.Networking.Format, s.bucket)
-		if err != nil {
-			s.logger.Error("Error deserializing response data", zap.Error(err))
-			return
-		}
-		if value != nil {
-			w.WriteHeader(int(httpResponseData.StatusCode))
-			w.Write([]byte(httpResponseData.Body.Body))
-		}
+		w.WriteHeader(int(httpResponseData.StatusCode))
+		w.Write([]byte(httpResponseData.Body.Body))
 	case <-ctx.Done():
 		s.logger.Debug("Request timed out...")
 		if ctx.Err() == context.DeadlineExceeded {
@@ -521,8 +515,9 @@ func (s *server) startHTTP1(c HubConfig) {
 						s.logger.Info("Error deserializing response packet: " + err.Error())
 						return
 					}
+					s.logger.Debug(string(httpResponsePacket.HttpResponseData))
 
-					httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), s.commonConfig.Networking.Format, nil)
+					httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), s.commonConfig.Networking.Format, s.bucket)
 					if err != nil {
 						s.logger.Info("Error deserializing HTTP response data: " + err.Error())
 						return
@@ -569,13 +564,7 @@ func (s *server) startHTTP1(c HubConfig) {
 						}
 					}
 
-					b, err := data.SerializeHTTPResponseData(busChPayload.httpResponseData, s.commonConfig.Networking.Format)
-					if err != nil {
-						s.logger.Info("Error serializing HTTP response data: " + err.Error())
-						return
-					}
-
-					err = s.bus.Emit(context.Background(), busChPayload.responsePacket.RequestId, b)
+					err := s.bus.Emit(context.Background(), busChPayload.responsePacket.RequestId, busChPayload.httpResponseData)
 					if err != nil {
 						if strings.Contains(err.Error(), fmt.Sprintf("bus: topic(%s) not found", busChPayload.responsePacket.RequestId)) {
 							return

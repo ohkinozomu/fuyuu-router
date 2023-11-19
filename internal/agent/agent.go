@@ -489,6 +489,8 @@ func Start(c AgentConfig) {
 
 						var body data.HTTPBody
 						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
+							s.logger.Debug("Using storage relay")
+							s.logger.Debug("Object name: " + objectName)
 							body = data.HTTPBody{
 								Body: []byte(objectName),
 								Type: "storage_relay",
@@ -527,6 +529,7 @@ func Start(c AgentConfig) {
 				}
 
 				s.logger.Debug("Publishing response")
+				s.logger.Debug("Payload: " + string(responsePayload))
 				_, err = s.client.Publish(context.Background(), &paho.Publish{
 					Topic:   responseTopic,
 					QoS:     0,

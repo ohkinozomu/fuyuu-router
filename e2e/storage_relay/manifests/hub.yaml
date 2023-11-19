@@ -62,6 +62,7 @@ data:
     large_data_policy = "storage_relay"
     [storage_relay]
     objstore_file = "/app/config/objstore.yaml"
+    threshold_bytes = 1
   objstore.yaml: |
     type: FILESYSTEM
     config:

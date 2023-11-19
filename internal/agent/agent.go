@@ -478,7 +478,7 @@ func Start(c AgentConfig) {
 						}
 					} else {
 						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
-							objectName = s.id + "/" + processChPayload.requestPacket.RequestId + "/response"
+							objectName = common.ResponseObjectName(s.id, processChPayload.requestPacket.RequestId)
 							err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(httpResponse))
 							if err != nil {
 								s.logger.Error("Error uploading object to object storage", zap.Error(err))

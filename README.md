@@ -95,6 +95,15 @@ data:
 
 The hub and agent must reference the same bucket and have appropriate permissions to it.
 
+For instance, in S3, the shortest deletion period is one day. In fuyuu-router, since object storage is used only temporarily, if you want to reduce costs, you can have the hub delete objects by using the `deletion` settings.
+
+```toml
+[storage_relay]
+objstore_file = "/app/config/objstore.yaml"
+threshold_bytes = 128000
+deletion = true
+```
+
 ## limitation
 
 - Currently only HTTP 1.1 is supported. Perhaps HTTP2 is the next roadmap.

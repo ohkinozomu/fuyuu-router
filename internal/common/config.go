@@ -33,6 +33,7 @@ type Networking struct {
 type StorageRelay struct {
 	ThresholdBytes int    `mapstructure:"threshold_bytes"`
 	ObjstoreFile   string `mapstructure:"objstore_file"`
+	Deletion       bool   `mapstructure:"deletion"`
 }
 
 type Split struct {

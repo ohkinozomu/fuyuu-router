@@ -281,7 +281,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	var objectName string
 	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
-		objectName = agentID + "/" + uuid + "/request"
+		objectName = common.RequestObjectName(agentID, uuid)
 		s.logger.Debug("Uploading object to object storage...")
 		err := s.bucket.Upload(context.Background(), objectName, r.Body)
 		if err != nil {
@@ -463,6 +463,16 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.bus.DeregisterHandler(uuid)
 	s.bus.DeregisterTopics(uuid)
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && s.commonConfig.StorageRelay.Deletion {
+		err = s.bucket.Delete(context.Background(), common.RequestObjectName(agentID, uuid))
+		if err != nil {
+			s.logger.Error("Error deleting object from object storage", zap.Error(err))
+		}
+		err = s.bucket.Delete(context.Background(), common.ResponseObjectName(agentID, uuid))
+		if err != nil {
+			s.logger.Error("Error deleting object from object storage", zap.Error(err))
+		}
+	}
 }
 
 func Start(c HubConfig) {

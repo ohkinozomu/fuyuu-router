@@ -201,15 +201,13 @@ func newServer(c AgentConfig) server {
 		c.Logger.Fatal(err.Error())
 	}
 
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		c.Logger.Fatal(err.Error())
+	}
 	var encoder *zstd.Encoder
-	var decoder *zstd.Decoder
 	if c.CommonConfigV2.Networking.Compress == "zstd" {
 		encoder, err = zstd.NewWriter(nil)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-
-		decoder, err = zstd.NewReader(nil)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}

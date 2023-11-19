@@ -19,8 +19,6 @@ spec:
         volumeMounts:
         - name: fuyuu-router-hub-config
           mountPath: /app/config
-        - name: objstore
-          mountPath: /tmp/objstore
         command: ["/bin/sh", "-c"]
         args:
         - |
@@ -31,10 +29,6 @@ spec:
       - name: fuyuu-router-hub-config
         configMap:
           name: fuyuu-router-hub-config
-      - name: objstore
-        hostPath:
-          path: /tmp/objstore
-          type: Directory
 ---
 apiVersion: v1
 kind: Service
@@ -61,4 +55,4 @@ data:
     format = "json"
     large_data_policy = "split"
     [split]
-    chunk_bytes = 128000
+    chunk_bytes = 1

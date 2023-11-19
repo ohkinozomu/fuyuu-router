@@ -37,6 +37,10 @@ func (m *Merger) IsComplete(chunk *HTTPBodyChunk) bool {
 }
 
 func (m *Merger) GetCombinedData(chunk *HTTPBodyChunk) []byte {
+	// Avoid concurrent map read and map write
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if !m.IsComplete(chunk) {
 		return nil
 	}

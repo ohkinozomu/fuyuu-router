@@ -109,7 +109,6 @@ func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
 			ClientID: "fuyuu-router-hub" + "-" + uuid.New().String(),
 			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 				c.Logger.Debug("Received message")
-				c.Logger.Debug("payload: " + string(m.Payload))
 				payloadCh <- m.Payload
 			}),
 			OnClientError: func(err error) {
@@ -515,7 +514,6 @@ func (s *server) startHTTP1(c HubConfig) {
 						s.logger.Info("Error deserializing response packet: " + err.Error())
 						return
 					}
-					s.logger.Debug(string(httpResponsePacket.HttpResponseData))
 
 					httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), s.commonConfig.Networking.Format, s.bucket)
 					if err != nil {

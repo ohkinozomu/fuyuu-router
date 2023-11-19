@@ -529,7 +529,6 @@ func Start(c AgentConfig) {
 				}
 
 				s.logger.Debug("Publishing response")
-				s.logger.Debug("Payload: " + string(responsePayload))
 				_, err = s.client.Publish(context.Background(), &paho.Publish{
 					Topic:   responseTopic,
 					QoS:     0,

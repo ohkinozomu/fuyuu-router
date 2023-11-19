@@ -155,9 +155,11 @@ func newBus() *bus.Bus {
 }
 
 func newServer(c HubConfig) server {
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		c.Logger.Fatal(err.Error())
+	}
 	var encoder *zstd.Encoder
-	var decoder *zstd.Decoder
-	var err error
 	if c.CommonConfigV2.Networking.Compress == "zstd" {
 		encoder, err = zstd.NewWriter(nil)
 		if err != nil {

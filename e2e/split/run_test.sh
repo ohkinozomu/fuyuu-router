@@ -2,7 +2,7 @@
 
 set -eux
 
-picture_file_local="e2e/storage_relay/picture.jpg"
+picture_file_local="e2e/split/picture.jpg"
 
 curl_tester_pod=$(kubectl get pods -n fuyuu-router -l app=curl-tester -o jsonpath='{.items[0].metadata.name}')
 

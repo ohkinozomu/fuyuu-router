@@ -1,3 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: appserver-config
+  namespace: fuyuu-router
+data:
+  server.go: |
+    package main
+
+    import (
+      "io/ioutil"
+      "net/http"
+      "log"
+    )
+
+    func echoHandler(w http.ResponseWriter, r *http.Request) {
+      body, err := ioutil.ReadAll(r.Body)
+      if err != nil {
+        http.Error(w, "Error reading body", http.StatusBadRequest)
+        return
+      }
+      w.Write(body)
+    }
+
+    func main() {
+      http.HandleFunc("/", echoHandler)
+      if err := http.ListenAndServe(":8000", nil); err != nil {
+        log.Fatal("ListenAndServe: ", err)
+      }
+    }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,18 +50,19 @@ spec:
         volumeMounts:
         - name: fuyuu-router-agent-config
           mountPath: /app/config
-        - name: objstore
-          mountPath: /tmp/objstore
         command: ["/bin/sh", "-c"]
         args:
         - |
           /app/fuyuu-router agent -c /app/config/config.toml --id agent01 -b mqtt://mosquitto.mosquitto:1883 --proxy-host 127.0.0.1:8000 --loglevel debug
       - name: appserver
         image: golang:1.21.3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app
         command: ["/bin/sh", "-c"]
         args:
         - |
-          echo 'package main; import ("net/http"; "fmt"); func main() { http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, "ok") }); http.ListenAndServe(":8000", nil) }' > server.go && go run server.go
+          go run /app/server.go
         ports:
         - containerPort: 8000
         livenessProbe:
@@ -46,13 +78,12 @@ spec:
           initialDelaySeconds: 15
           periodSeconds: 5
       volumes:
+      - name: config-volume
+        configMap:
+          name: appserver-config
       - name: fuyuu-router-agent-config
         configMap:
           name: fuyuu-router-agent-config
-      - name: objstore
-        hostPath:
-          path: /tmp/objstore
-          type: Directory
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -65,4 +96,4 @@ data:
     format = "json"
     large_data_policy = "split"
     [split]
-    chunk_bytes = 128000
+    chunk_bytes = 1

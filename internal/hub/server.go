@@ -38,7 +38,7 @@ type mergeChPayload struct {
 	httpResponseData *data.HTTPResponseData
 }
 
-type updateDBChPayload struct {
+type busChPayload struct {
 	responsePacket   *data.HTTPResponsePacket
 	httpResponseData *data.HTTPResponseData
 }
@@ -54,7 +54,7 @@ type server struct {
 	merger       *data.Merger
 	payloadCh    chan []byte
 	mergeCh      chan mergeChPayload
-	updateDBCh   chan updateDBChPayload
+	busCh        chan busChPayload
 	errCh        chan error
 }
 
@@ -171,7 +171,7 @@ func newServer(c HubConfig) server {
 
 	payloadCh := make(chan []byte, 1000)
 	mergeCh := make(chan mergeChPayload, 1000)
-	updateDBCh := make(chan updateDBChPayload, 1000)
+	busCh := make(chan busChPayload, 1000)
 	errCh := make(chan error, 1000)
 	client := newClient(c, payloadCh)
 
@@ -210,15 +210,15 @@ func newServer(c HubConfig) server {
 			c.Logger.Fatal(err.Error())
 		}
 
-		updateDBChSize, err := meter.Float64ObservableGauge("buffered_update_db_channel_size", api.WithDescription("The size of the buffered updateDBCh"))
+		busChSize, err := meter.Float64ObservableGauge("buffered_bus_channel_size", api.WithDescription("The size of the buffered busCh"))
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}
 		_, err = meter.RegisterCallback(func(_ context.Context, o api.Observer) error {
-			n := float64(len(updateDBCh))
-			o.ObserveFloat64(updateDBChSize, n)
+			n := float64(len(busCh))
+			o.ObserveFloat64(busChSize, n)
 			return nil
-		}, updateDBChSize)
+		}, busChSize)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}
@@ -249,7 +249,7 @@ func newServer(c HubConfig) server {
 		merger:       data.NewMerger(c.Logger),
 		payloadCh:    payloadCh,
 		mergeCh:      mergeCh,
-		updateDBCh:   updateDBCh,
+		busCh:        busCh,
 		errCh:        errCh,
 	}
 }
@@ -525,7 +525,7 @@ func (s *server) startHTTP1(c HubConfig) {
 						}
 					} else {
 						s.logger.Debug("Received non-split message")
-						s.updateDBCh <- updateDBChPayload{
+						s.busCh <- busChPayload{
 							responsePacket:   httpResponsePacket,
 							httpResponseData: httpResponseData,
 						}
@@ -543,31 +543,31 @@ func (s *server) startHTTP1(c HubConfig) {
 					if s.merger.IsComplete(chunk) {
 						combined := s.merger.GetCombinedData(chunk)
 						mergeChPayload.httpResponseData.Body.Body = combined
-						s.updateDBCh <- updateDBChPayload(mergeChPayload)
+						s.busCh <- busChPayload(mergeChPayload)
 					}
 				}()
-			case updateDBChPayload := <-s.updateDBCh:
+			case busChPayload := <-s.busCh:
 				go func() {
 					s.logger.Debug("Writing response to database...")
 
-					if updateDBChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
+					if busChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
 						var err error
-						updateDBChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(updateDBChPayload.httpResponseData.Body.Body, nil)
+						busChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(busChPayload.httpResponseData.Body.Body, nil)
 						if err != nil {
 							s.logger.Info("Error decompressing message: " + err.Error())
 							return
 						}
 					}
 
-					b, err := data.SerializeHTTPResponseData(updateDBChPayload.httpResponseData, s.commonConfig.Networking.Format)
+					b, err := data.SerializeHTTPResponseData(busChPayload.httpResponseData, s.commonConfig.Networking.Format)
 					if err != nil {
 						s.logger.Info("Error serializing HTTP response data: " + err.Error())
 						return
 					}
 
-					err = s.bus.Emit(context.Background(), updateDBChPayload.responsePacket.RequestId, b)
+					err = s.bus.Emit(context.Background(), busChPayload.responsePacket.RequestId, b)
 					if err != nil {
-						if strings.Contains(err.Error(), fmt.Sprintf("bus: topic(%s) not found", updateDBChPayload.responsePacket.RequestId)) {
+						if strings.Contains(err.Error(), fmt.Sprintf("bus: topic(%s) not found", busChPayload.responsePacket.RequestId)) {
 							return
 						}
 						s.logger.Info("Error setting key in database: " + err.Error())

@@ -55,14 +55,6 @@ func (m *Merger) GetCombinedData(chunk *HTTPBodyChunk) []byte {
 	return combinedData
 }
 
-func bytesArrayToStringArray(b [][]byte) []string {
-	var stringArray []string
-	for _, bytes := range b {
-		stringArray = append(stringArray, string(bytes))
-	}
-	return stringArray
-}
-
 func SplitChunk(body []byte, chunkByte int) [][]byte {
 	var chunks [][]byte
 	for i := 0; i < len(body); i += chunkByte {

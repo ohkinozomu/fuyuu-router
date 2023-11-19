@@ -90,7 +90,7 @@ var hubCmd = &cobra.Command{
 				ncp := ncp.NeutralCP{Config: c}
 
 				ctx := context.Background()
-				err := ncp.Start(ctx)
+				err := ncp.Start(ctx, logger)
 				if err != nil {
 					logger.Fatal(err.Error())
 				}

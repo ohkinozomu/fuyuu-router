@@ -1,27 +1,25 @@
-package data
+package split
 
 import (
 	"sort"
 	"sync"
 
-	"go.uber.org/zap"
+	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 )
 
 type Merger struct {
 	chunks map[string]map[int][]byte
-	logger *zap.Logger
 	mu     sync.Mutex
 }
 
-func NewMerger(logger *zap.Logger) *Merger {
+func NewMerger() *Merger {
 	return &Merger{
 		chunks: make(map[string]map[int][]byte),
-		logger: logger,
 		mu:     sync.Mutex{},
 	}
 }
 
-func (m *Merger) AddChunk(chunk *HTTPBodyChunk) {
+func (m *Merger) AddChunk(chunk *data.HTTPBodyChunk) {
 	// Avoid concurrent map writes
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -29,14 +27,13 @@ func (m *Merger) AddChunk(chunk *HTTPBodyChunk) {
 		m.chunks[chunk.RequestId] = make(map[int][]byte)
 	}
 	m.chunks[chunk.RequestId][int(chunk.Sequence)] = chunk.Data
-	m.logger.Debug("Chunk added")
 }
 
-func (m *Merger) IsComplete(chunk *HTTPBodyChunk) bool {
+func (m *Merger) IsComplete(chunk *data.HTTPBodyChunk) bool {
 	return len(m.chunks[chunk.RequestId]) == int(chunk.Total)
 }
 
-func (m *Merger) GetCombinedData(chunk *HTTPBodyChunk) []byte {
+func (m *Merger) GetCombinedData(chunk *data.HTTPBodyChunk) []byte {
 	// Avoid concurrent map read and map write
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -57,16 +54,4 @@ func (m *Merger) GetCombinedData(chunk *HTTPBodyChunk) []byte {
 	}
 
 	return combinedData
-}
-
-func SplitChunk(body []byte, chunkByte int) [][]byte {
-	var chunks [][]byte
-	for i := 0; i < len(body); i += chunkByte {
-		end := i + chunkByte
-		if end > len(body) {
-			end = len(body)
-		}
-		chunks = append(chunks, body[i:end])
-	}
-	return chunks
 }

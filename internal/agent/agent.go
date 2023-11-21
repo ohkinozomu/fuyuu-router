@@ -423,7 +423,7 @@ func Start(c AgentConfig) {
 								Headers:    &protoHeaders,
 							}
 
-							b, err = data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format)
+							b, err = data.Serialize(&responseData, s.commonConfig.Networking.Format)
 							if err != nil {
 								return nil, err
 							}
@@ -433,7 +433,7 @@ func Start(c AgentConfig) {
 								Compress:         s.commonConfig.Networking.Compress,
 							}
 
-							responsePayload, err := data.SerializeResponsePacket(&responsePacket, s.commonConfig.Networking.Format)
+							responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
 							if err != nil {
 								return nil, err
 							}
@@ -491,7 +491,7 @@ func Start(c AgentConfig) {
 						}
 					}
 				}
-				b, err := data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format)
+				b, err := data.Serialize(&responseData, s.commonConfig.Networking.Format)
 				if err != nil {
 					s.logger.Error("Error serializing response data", zap.Error(err))
 					return
@@ -504,7 +504,7 @@ func Start(c AgentConfig) {
 
 				responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
 
-				responsePayload, err := data.SerializeResponsePacket(&responsePacket, s.commonConfig.Networking.Format)
+				responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
 				if err != nil {
 					s.logger.Error("Error serializing response packet", zap.Error(err))
 					return

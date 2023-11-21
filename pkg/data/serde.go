@@ -21,14 +21,14 @@ func HTTPHeaderToProtoHeaders(httpHeader http.Header) HTTPHeaders {
 	}
 }
 
-func SerializeRequestPacket(packet *HTTPRequestPacket, format string) ([]byte, error) {
+func Serialize[T proto.Message](value T, format string) ([]byte, error) {
 	var err error
 	var payload []byte
 	switch format {
 	case "json":
-		payload, err = json.Marshal(packet)
+		payload, err = json.Marshal(value)
 	case "protobuf":
-		payload, err = proto.Marshal(packet)
+		payload, err = proto.Marshal(value)
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
@@ -53,24 +53,6 @@ func DeserializeRequestPacket(payload []byte, format string) (*HTTPRequestPacket
 	return &requestPacket, err
 }
 
-func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string) ([]byte, error) {
-	var err error
-	var responsePayload []byte
-	switch format {
-	case "json":
-		responsePayload, err = json.Marshal(responsePacket)
-	case "protobuf":
-		responsePayload, err = proto.Marshal(responsePacket)
-	default:
-		return nil, fmt.Errorf("unknown format: %s", format)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return responsePayload, err
-}
-
 func DeserializeResponsePacket(payload []byte, format string) (*HTTPResponsePacket, error) {
 	var err error
 	responsePacket := HTTPResponsePacket{}
@@ -83,26 +65,6 @@ func DeserializeResponsePacket(payload []byte, format string) (*HTTPResponsePack
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
 	return &responsePacket, err
-}
-
-func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string) ([]byte, error) {
-	var b []byte
-	var err error
-	switch format {
-	case "json":
-		b, err = json.Marshal(httpRequestData)
-		if err != nil {
-			return nil, err
-		}
-	case "protobuf":
-		b, err = proto.Marshal(httpRequestData)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("unknown format: %s", format)
-	}
-	return b, nil
 }
 
 func DeserializeHTTPRequestData(b []byte, format string, bucket objstore.Bucket) (*HTTPRequestData, error) {
@@ -141,26 +103,6 @@ func DeserializeHTTPRequestData(b []byte, format string, bucket objstore.Bucket)
 	return &httpRequestData, nil
 }
 
-func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string) ([]byte, error) {
-	var b []byte
-	var err error
-	switch format {
-	case "json":
-		b, err = json.Marshal(httpResponseData)
-		if err != nil {
-			return nil, err
-		}
-	case "protobuf":
-		b, err = proto.Marshal(httpResponseData)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("unknown format: %s", format)
-	}
-	return b, nil
-}
-
 func DeserializeHTTPResponseData(b []byte, format string, bucket objstore.Bucket) (*HTTPResponseData, error) {
 	var httpResponseData HTTPResponseData
 	switch format {
@@ -195,24 +137,6 @@ func DeserializeHTTPResponseData(b []byte, format string, bucket objstore.Bucket
 	}
 
 	return &httpResponseData, nil
-}
-
-func SerializeHTTPBodyChunk(httpBodyChunk *HTTPBodyChunk, format string) ([]byte, error) {
-	var err error
-	var b []byte
-	switch format {
-	case "json":
-		b, err = json.Marshal(httpBodyChunk)
-	case "protobuf":
-		b, err = proto.Marshal(httpBodyChunk)
-	default:
-		return nil, fmt.Errorf("unknown format: %s", format)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return b, err
 }
 
 func DeserializeHTTPBodyChunk(payload []byte, format string) (*HTTPBodyChunk, error) {

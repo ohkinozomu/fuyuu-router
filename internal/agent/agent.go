@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
+	"github.com/ohkinozomu/fuyuu-router/internal/common/split"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"github.com/thanos-io/objstore"
@@ -419,19 +420,16 @@ func Start(c AgentConfig) {
 					}
 
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
-						chunks := data.SplitChunk(httpResponse, s.commonConfig.Split.ChunkBytes)
-
-						for sequence, c := range chunks {
+						processFn := func(sequence int, chunk []byte, total int) (any, error) {
 							httpBodyChunk := data.HTTPBodyChunk{
 								RequestId: processChPayload.requestPacket.RequestId,
-								Total:     int32(len(chunks)),
+								Total:     int32(total),
 								Sequence:  int32(sequence + 1),
-								Data:      c,
+								Data:      chunk,
 							}
 							b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
 							if err != nil {
-								s.logger.Error("Error serializing HTTP body chunk", zap.Error(err))
-								return
+								return nil, err
 							}
 
 							body := data.HTTPBody{
@@ -447,8 +445,7 @@ func Start(c AgentConfig) {
 
 							b, err = data.SerializeHTTPResponseData(&responseData, s.commonConfig.Networking.Format)
 							if err != nil {
-								s.logger.Error("Error serializing response data", zap.Error(err))
-								return
+								return nil, err
 							}
 							responsePacket = data.HTTPResponsePacket{
 								RequestId:        processChPayload.requestPacket.RequestId,
@@ -456,23 +453,30 @@ func Start(c AgentConfig) {
 								Compress:         s.commonConfig.Networking.Compress,
 							}
 
-							responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
-
 							responsePayload, err := data.SerializeResponsePacket(&responsePacket, s.commonConfig.Networking.Format)
 							if err != nil {
-								s.logger.Error("Error serializing response packet", zap.Error(err))
-								return
+								return nil, err
 							}
+							return responsePayload, nil
+						}
 
+						sendFn := func(payload any) error {
+							responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
 							_, err = s.client.Publish(context.Background(), &paho.Publish{
 								Topic:   responseTopic,
 								QoS:     0,
-								Payload: responsePayload,
+								Payload: payload.([]byte),
 							})
 							if err != nil {
-								s.logger.Error("Error publishing response", zap.Error(err))
-								return
+								return err
 							}
+							return nil
+						}
+
+						err := split.Split(httpResponse, s.commonConfig.Split.ChunkBytes, processFn, sendFn)
+						if err != nil {
+							s.logger.Error("Error splitting message", zap.Error(err))
+							return
 						}
 					} else {
 						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {

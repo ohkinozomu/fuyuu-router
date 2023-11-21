@@ -42,7 +42,7 @@ func Split(id string, bytes []byte, chunkSize int, format string, processFn func
 }
 
 func Merge(merger *Merger, body []byte, format string) (combined []byte, completed bool, err error) {
-	chunk, err := data.DeserializeHTTPBodyChunk(body, format)
+	chunk, err := data.Deserialize[*data.HTTPBodyChunk](body, format)
 	if err != nil {
 		return nil, false, err
 	}

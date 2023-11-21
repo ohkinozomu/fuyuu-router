@@ -50,7 +50,7 @@ type server struct {
 	payloadCh    chan []byte
 	mergeCh      chan mergeChPayload
 	processCh    chan processChPayload
-	merger       *data.Merger
+	merger       *split.Merger
 }
 
 func createWillMessage(c AgentConfig) *paho.WillMessage {
@@ -239,7 +239,7 @@ func newServer(c AgentConfig) server {
 		encoder:      encoder,
 		decoder:      decoder,
 		bucket:       bucket,
-		merger:       data.NewMerger(c.Logger),
+		merger:       split.NewMerger(),
 	}
 }
 
@@ -360,25 +360,16 @@ func Start(c AgentConfig) {
 			}()
 		case mergeChPayload := <-s.mergeCh:
 			go func() {
-				chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpRequestData.Body.Body, s.commonConfig.Networking.Format)
+				combined, completed, err := split.Merge(s.merger, mergeChPayload.httpRequestData.Body.Body, s.commonConfig.Networking.Format)
 				if err != nil {
-					s.logger.Error("Error deserializing HTTP body chunk", zap.Error(err))
+					s.logger.Info("Error merging message: " + err.Error())
 					return
 				}
-				s.logger.Debug("Received chunk")
-				s.merger.AddChunk(chunk)
-
-				if s.merger.IsComplete(chunk) {
-					s.logger.Debug("Received last chunk")
-					combined := s.merger.GetCombinedData(chunk)
-					s.logger.Debug("Combined data")
+				if completed {
 					mergeChPayload.httpRequestData.Body.Body = combined
-					processChPayload := processChPayload(mergeChPayload)
-					s.logger.Debug("Sending to processCh")
-					s.processCh <- processChPayload
-					s.logger.Debug("Sent to processCh")
+					// TODO: delete from merger
+					s.processCh <- processChPayload(mergeChPayload)
 				}
-				s.logger.Debug("Done")
 			}()
 		case processChPayload := <-s.processCh:
 			go func() {

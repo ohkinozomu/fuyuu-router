@@ -4,8 +4,20 @@ import (
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 )
 
+func splitChunk(body []byte, chunkByte int) [][]byte {
+	var chunks [][]byte
+	for i := 0; i < len(body); i += chunkByte {
+		end := i + chunkByte
+		if end > len(body) {
+			end = len(body)
+		}
+		chunks = append(chunks, body[i:end])
+	}
+	return chunks
+}
+
 func Split(id string, bytes []byte, chunkSize int, format string, processFn func(int, []byte) (any, error), sendFn func(any) error) error {
-	chunks := data.SplitChunk(bytes, chunkSize)
+	chunks := splitChunk(bytes, chunkSize)
 
 	for sequence, chunk := range chunks {
 		httpBodyChunk := data.HTTPBodyChunk{
@@ -27,4 +39,18 @@ func Split(id string, bytes []byte, chunkSize int, format string, processFn func
 		}
 	}
 	return nil
+}
+
+func Merge(merger *Merger, body []byte, format string) (combined []byte, completed bool, err error) {
+	chunk, err := data.DeserializeHTTPBodyChunk(body, format)
+	if err != nil {
+		return nil, false, err
+	}
+	merger.AddChunk(chunk)
+
+	if merger.IsComplete(chunk) {
+		combined := merger.GetCombinedData(chunk)
+		return combined, true, nil
+	}
+	return nil, false, nil
 }

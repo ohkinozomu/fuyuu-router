@@ -52,7 +52,7 @@ type server struct {
 	decoder      *zstd.Decoder
 	commonConfig common.CommonConfigV2
 	bucket       objstore.Bucket
-	merger       *data.Merger
+	merger       *split.Merger
 	payloadCh    chan []byte
 	mergeCh      chan mergeChPayload
 	busCh        chan busChPayload
@@ -249,7 +249,7 @@ func newServer(c HubConfig) server {
 		decoder:      decoder,
 		commonConfig: c.CommonConfigV2,
 		bucket:       bucket,
-		merger:       data.NewMerger(c.Logger),
+		merger:       split.NewMerger(),
 		payloadCh:    payloadCh,
 		mergeCh:      mergeCh,
 		busCh:        busCh,
@@ -525,16 +525,14 @@ func (s *server) startHTTP1(c HubConfig) {
 				}()
 			case mergeChPayload := <-s.mergeCh:
 				go func() {
-					chunk, err := data.DeserializeHTTPBodyChunk(mergeChPayload.httpResponseData.Body.Body, s.commonConfig.Networking.Format)
+					combined, completed, err := split.Merge(s.merger, mergeChPayload.httpResponseData.Body.Body, s.commonConfig.Networking.Format)
 					if err != nil {
-						s.logger.Error("Error deserializing HTTP body chunk", zap.Error(err))
+						s.logger.Info("Error merging message: " + err.Error())
 						return
 					}
-					s.merger.AddChunk(chunk)
-
-					if s.merger.IsComplete(chunk) {
-						combined := s.merger.GetCombinedData(chunk)
+					if completed {
 						mergeChPayload.httpResponseData.Body.Body = combined
+						// TODO: delete from merger
 						s.busCh <- busChPayload(mergeChPayload)
 					}
 				}()

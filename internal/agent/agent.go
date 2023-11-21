@@ -420,18 +420,7 @@ func Start(c AgentConfig) {
 					}
 
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
-						processFn := func(sequence int, chunk []byte, total int) (any, error) {
-							httpBodyChunk := data.HTTPBodyChunk{
-								RequestId: processChPayload.requestPacket.RequestId,
-								Total:     int32(total),
-								Sequence:  int32(sequence + 1),
-								Data:      chunk,
-							}
-							b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
-							if err != nil {
-								return nil, err
-							}
-
+						processFn := func(sequence int, b []byte) (any, error) {
 							body := data.HTTPBody{
 								Body: b,
 								Type: "split",
@@ -473,7 +462,7 @@ func Start(c AgentConfig) {
 							return nil
 						}
 
-						err := split.Split(httpResponse, s.commonConfig.Split.ChunkBytes, processFn, sendFn)
+						err := split.Split(processChPayload.requestPacket.RequestId, httpResponse, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
 						if err != nil {
 							s.logger.Error("Error splitting message", zap.Error(err))
 							return

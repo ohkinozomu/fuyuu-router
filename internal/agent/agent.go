@@ -333,7 +333,7 @@ func Start(c AgentConfig) {
 		select {
 		case payload := <-s.payloadCh:
 			go func() {
-				requestPacket, err := data.DeserializeRequestPacket(payload, s.commonConfig.Networking.Format)
+				requestPacket, err := data.Deserialize[*data.HTTPRequestPacket](payload, s.commonConfig.Networking.Format)
 				if err != nil {
 					s.logger.Error("Error deserializing request packet", zap.Error(err))
 					return

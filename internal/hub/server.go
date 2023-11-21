@@ -498,7 +498,7 @@ func (s *server) startHTTP1(c HubConfig) {
 			case payload := <-s.payloadCh:
 				go func() {
 					s.logger.Debug("Received message")
-					httpResponsePacket, err := data.DeserializeResponsePacket(payload, s.commonConfig.Networking.Format)
+					httpResponsePacket, err := data.Deserialize[*data.HTTPResponsePacket](payload, s.commonConfig.Networking.Format)
 					if err != nil {
 						s.logger.Info("Error deserializing response packet: " + err.Error())
 						return

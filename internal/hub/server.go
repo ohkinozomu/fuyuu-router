@@ -346,7 +346,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				Body:    &body,
 			}
 
-			b, err = data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format)
+			b, err = data.Serialize(&requestData, s.commonConfig.Networking.Format)
 			if err != nil {
 				return nil, err
 			}
@@ -356,7 +356,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				HttpRequestData: b,
 				Compress:        s.commonConfig.Networking.Compress,
 			}
-			requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
+			requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
 			if err != nil {
 				return nil, err
 			}
@@ -400,7 +400,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			Body:    &body,
 		}
 
-		b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format)
+		b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
 		if err != nil {
 			s.logger.Error("Error serializing request data", zap.Error(err))
 			return
@@ -412,7 +412,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			Compress:        s.commonConfig.Networking.Compress,
 		}
 
-		requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
+		requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
 		if err != nil {
 			s.logger.Error("Error serializing request packet", zap.Error(err))
 			return

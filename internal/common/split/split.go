@@ -26,7 +26,7 @@ func Split(id string, bytes []byte, chunkSize int, format string, processFn func
 			Sequence:  int32(sequence + 1),
 			Data:      chunk,
 		}
-		b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, format)
+		b, err := data.Serialize(&httpBodyChunk, format)
 		if err != nil {
 			return err
 		}

@@ -56,7 +56,6 @@ type server struct {
 	payloadCh    chan []byte
 	mergeCh      chan mergeChPayload
 	busCh        chan busChPayload
-	errCh        chan error
 }
 
 func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
@@ -175,7 +174,6 @@ func newServer(c HubConfig) server {
 	payloadCh := make(chan []byte, 1000)
 	mergeCh := make(chan mergeChPayload, 1000)
 	busCh := make(chan busChPayload, 1000)
-	errCh := make(chan error, 1000)
 	client := newClient(c, payloadCh)
 
 	if c.CommonConfigV2.Telemetry.Enabled {
@@ -253,7 +251,6 @@ func newServer(c HubConfig) server {
 		payloadCh:    payloadCh,
 		mergeCh:      mergeCh,
 		busCh:        busCh,
-		errCh:        errCh,
 	}
 }
 
@@ -305,7 +302,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		s.errCh <- err
+		s.logger.Error("Error subscribing to response topic", zap.Error(err))
 		return
 	}
 	defer s.client.Unsubscribe(ctx, &paho.Unsubscribe{
@@ -558,8 +555,6 @@ func (s *server) startHTTP1(c HubConfig) {
 						return
 					}
 				}()
-			case err := <-s.errCh:
-				s.logger.Info("Error: " + err.Error())
 			}
 		}
 	}()

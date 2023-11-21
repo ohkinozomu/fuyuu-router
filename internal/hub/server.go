@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -320,8 +321,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.bus.RegisterHandler(uuid, handler)
 
-	bodyBytes := make([]byte, r.ContentLength)
-	r.Body.Read(bodyBytes)
+	bodyBytes, err := io.ReadAll(r.Body)
 
 	if s.encoder != nil {
 		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)

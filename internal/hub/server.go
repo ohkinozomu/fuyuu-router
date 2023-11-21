@@ -23,6 +23,7 @@ import (
 	"github.com/mustafaturan/monoton/v3"
 	"github.com/mustafaturan/monoton/v3/sequencer"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
+	"github.com/ohkinozomu/fuyuu-router/internal/common/split"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
 	"github.com/ohkinozomu/fuyuu-router/pkg/topics"
 	"github.com/thanos-io/objstore"
@@ -329,45 +330,36 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
 	}
 
-	dataHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
-
 	var body data.HTTPBody
 
-	s.logger.Debug("content length: " + fmt.Sprintf("%d", r.ContentLength))
-	s.logger.Debug("split threshold: " + fmt.Sprintf("%d", s.commonConfig.Split.ChunkBytes))
 	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
-		s.logger.Debug("Splitting request body...")
-		chunks := data.SplitChunk(bodyBytes, s.commonConfig.Split.ChunkBytes)
-
-		for sequence, c := range chunks {
+		processFn := func(sequence int, chunk []byte, total int) (any, error) {
 			httpBodyChunk := data.HTTPBodyChunk{
 				RequestId: uuid,
-				Total:     int32(len(chunks)),
+				Total:     int32(total),
 				Sequence:  int32(sequence + 1),
-				Data:      c,
+				Data:      chunk,
 			}
 			b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
 			if err != nil {
-				s.logger.Error("Error serializing body chunk", zap.Error(err))
-				return
+				return nil, err
 			}
 
 			body = data.HTTPBody{
 				Body: b,
 				Type: "split",
 			}
-
+			protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
 			requestData := data.HTTPRequestData{
 				Method:  r.Method,
 				Path:    r.URL.Path,
-				Headers: &dataHeaders,
+				Headers: &protoHeaders,
 				Body:    &body,
 			}
 
 			b, err = data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format)
 			if err != nil {
-				s.logger.Error("Error serializing request data", zap.Error(err))
-				return
+				return nil, err
 			}
 
 			requestPacket := data.HTTPRequestPacket{
@@ -375,24 +367,29 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				HttpRequestData: b,
 				Compress:        s.commonConfig.Networking.Compress,
 			}
-
 			requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
 			if err != nil {
-				s.logger.Error("Error serializing request packet", zap.Error(err))
-				return
+				return nil, err
 			}
+			return requestPayload, nil
+		}
 
+		sendFn := func(payload any) error {
 			requestTopic := topics.RequestTopic(agentID)
-			s.logger.Debug("Publishing request...")
 			_, err = s.client.Publish(context.Background(), &paho.Publish{
-				Payload: requestPayload,
+				Payload: payload.([]byte),
 				Topic:   requestTopic,
 			})
 			if err != nil {
-				s.logger.Error("Error publishing request", zap.Error(err))
-				return
+				return err
 			}
-			s.logger.Debug("Published request")
+			return nil
+		}
+
+		err := split.Split(bodyBytes, s.commonConfig.Split.ChunkBytes, processFn, sendFn)
+		if err != nil {
+			s.logger.Error("Error splitting message", zap.Error(err))
+			return
 		}
 	} else {
 		if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
@@ -406,10 +403,11 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				Type: "data",
 			}
 		}
+		protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
 		requestData := data.HTTPRequestData{
 			Method:  r.Method,
 			Path:    r.URL.Path,
-			Headers: &dataHeaders,
+			Headers: &protoHeaders,
 			Body:    &body,
 		}
 

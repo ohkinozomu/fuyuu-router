@@ -21,8 +21,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/klauspost/compress/zstd"
 	"github.com/mustafaturan/bus/v3"
-	"github.com/mustafaturan/monoton/v3"
-	"github.com/mustafaturan/monoton/v3/sequencer"
 	"github.com/ohkinozomu/fuyuu-router/internal/common"
 	"github.com/ohkinozomu/fuyuu-router/internal/common/split"
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
@@ -135,24 +133,6 @@ func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
 		c.Logger.Fatal(err.Error())
 	}
 	return cm
-}
-
-func newBus() *bus.Bus {
-	node := uint64(1)
-	initialTime := uint64(time.Now().Unix())
-	m, err := monoton.New(sequencer.NewMillisecond(), node, initialTime)
-	if err != nil {
-		panic(err)
-	}
-
-	var idGenerator bus.Next = m.Next
-
-	b, err := bus.NewBus(idGenerator)
-	if err != nil {
-		panic(err)
-	}
-
-	return b
 }
 
 func newServer(c HubConfig) server {

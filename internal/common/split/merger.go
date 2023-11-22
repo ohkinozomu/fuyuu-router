@@ -29,6 +29,13 @@ func (m *Merger) AddChunk(chunk *data.HTTPBodyChunk) {
 	m.chunks[chunk.RequestId][int(chunk.Sequence)] = chunk.Data
 }
 
+func (m *Merger) DeleteChunk(requestId string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.chunks, requestId)
+}
+
 func (m *Merger) IsComplete(chunk *data.HTTPBodyChunk) bool {
 	return len(m.chunks[chunk.RequestId]) == int(chunk.Total)
 }

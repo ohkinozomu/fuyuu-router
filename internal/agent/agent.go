@@ -367,8 +367,8 @@ func Start(c AgentConfig) {
 				}
 				if completed {
 					mergeChPayload.httpRequestData.Body.Body = combined
-					// TODO: delete from merger
 					s.processCh <- processChPayload(mergeChPayload)
+					s.merger.DeleteChunk(mergeChPayload.requestPacket.RequestId)
 				}
 			}()
 		case processChPayload := <-s.processCh:

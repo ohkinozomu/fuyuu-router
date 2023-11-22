@@ -529,8 +529,8 @@ func (s *server) startHTTP1(c HubConfig) {
 					}
 					if completed {
 						mergeChPayload.httpResponseData.Body.Body = combined
-						// TODO: delete from merger
 						s.busCh <- busChPayload(mergeChPayload)
+						s.merger.DeleteChunk(mergeChPayload.responsePacket.RequestId)
 					}
 				}()
 			case busChPayload := <-s.busCh:

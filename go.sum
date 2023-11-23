@@ -114,6 +114,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/eclipse/paho.golang v0.12.1-0.20231115041409-5f4de1dba813 h1:yu//BXrsaMc14YJpePcWBEZhwsJ24K9qApseBJzKQcA=
 github.com/eclipse/paho.golang v0.12.1-0.20231115041409-5f4de1dba813/go.mod h1:TSDCUivu9JnoR9Hl+H7sQMcHkejWH2/xKK1NJGtLbIE=
+github.com/eclipse/paho.golang v0.12.1-0.20231120222709-28d6df34d833 h1:6E7tVxstMhIjCusC4aIpy3uttxXoXLZpbVMEM3vILQI=
+github.com/eclipse/paho.golang v0.12.1-0.20231120222709-28d6df34d833/go.mod h1:TSDCUivu9JnoR9Hl+H7sQMcHkejWH2/xKK1NJGtLbIE=
 github.com/efficientgo/core v1.0.0-rc.0.0.20221201130417-ba593f67d2a4 h1:rydBwnBoywKQMjWF0z8SriYtQ+uUcaFsxuijMjJr5PI=
 github.com/efficientgo/core v1.0.0-rc.0.0.20221201130417-ba593f67d2a4/go.mod h1:kQa0V74HNYMfuJH6jiPiwNdpWXl4xd/K4tzlrcvYDQI=
 github.com/efficientgo/e2e v0.13.1-0.20220922081603-45de9fc588a8 h1:UFLc39BcUXahSNCLUrKjNGZABMUZaS4M74EZvTRnq3k=

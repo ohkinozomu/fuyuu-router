@@ -44,17 +44,18 @@ type busChPayload struct {
 }
 
 type server struct {
-	client       *autopaho.ConnectionManager
-	bus          *bus.Bus
-	logger       *zap.Logger
-	encoder      *zstd.Encoder
-	decoder      *zstd.Decoder
-	commonConfig common.CommonConfigV2
-	bucket       objstore.Bucket
-	merger       *split.Merger
-	payloadCh    chan []byte
-	mergeCh      chan mergeChPayload
-	busCh        chan busChPayload
+	client                     *autopaho.ConnectionManager
+	bus                        *bus.Bus
+	logger                     *zap.Logger
+	encoder                    *zstd.Encoder
+	decoder                    *zstd.Decoder
+	commonConfig               common.CommonConfigV2
+	bucket                     objstore.Bucket
+	merger                     *split.Merger
+	payloadCh                  chan []byte
+	mergeCh                    chan mergeChPayload
+	busCh                      chan busChPayload
+	httpRequestDurationSeconds api.Float64Histogram
 }
 
 func newClient(c HubConfig, payloadCh chan []byte) *autopaho.ConnectionManager {
@@ -157,6 +158,7 @@ func newServer(c HubConfig) server {
 	busCh := make(chan busChPayload, 1000)
 	client := newClient(c, payloadCh)
 
+	var httpRequestDurationSeconds api.Float64Histogram
 	if c.CommonConfigV2.Telemetry.Enabled {
 		exporter, err := prometheus.New()
 		if err != nil {
@@ -205,6 +207,14 @@ func newServer(c HubConfig) server {
 			c.Logger.Fatal(err.Error())
 		}
 
+		httpRequestDurationSeconds, err = meter.Float64Histogram(
+			"http_request_duration_seconds",
+			api.WithDescription("The HTTP request latencies in seconds."),
+		)
+		if err != nil {
+			c.Logger.Fatal(err.Error())
+		}
+
 		go common.ServeMetrics(c.Logger)
 	}
 
@@ -221,26 +231,37 @@ func newServer(c HubConfig) server {
 	}
 
 	return server{
-		client:       client,
-		bus:          newBus(),
-		logger:       c.Logger,
-		encoder:      encoder,
-		decoder:      decoder,
-		commonConfig: c.CommonConfigV2,
-		bucket:       bucket,
-		merger:       split.NewMerger(),
-		payloadCh:    payloadCh,
-		mergeCh:      mergeCh,
-		busCh:        busCh,
+		client:                     client,
+		bus:                        newBus(),
+		logger:                     c.Logger,
+		encoder:                    encoder,
+		decoder:                    decoder,
+		commonConfig:               c.CommonConfigV2,
+		bucket:                     bucket,
+		merger:                     split.NewMerger(),
+		payloadCh:                  payloadCh,
+		mergeCh:                    mergeCh,
+		busCh:                      busCh,
+		httpRequestDurationSeconds: httpRequestDurationSeconds,
 	}
 }
 
 func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	var start time.Time
+	if s.commonConfig.Telemetry.Enabled {
+		start = time.Now()
+	}
+
 	s.logger.Debug("Handling request...")
 
 	fuyuuRouterIDs := r.Header.Get("FuyuuRouter-IDs")
 	if fuyuuRouterIDs == "" {
 		w.Write([]byte("FuyuuRouter-IDs header is required"))
+		if s.commonConfig.Telemetry.Enabled {
+			elapsed := time.Since(start)
+			s.logger.Debug("Request took " + elapsed.String())
+			s.httpRequestDurationSeconds.Record(context.Background(), elapsed.Seconds())
+		}
 		return
 	}
 	agentIDs := strings.Split(fuyuuRouterIDs, ",")
@@ -269,6 +290,18 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("Error uploading object to object storage", zap.Error(err))
 			return
 		}
+		if s.commonConfig.StorageRelay.Deletion {
+			defer func() {
+				err = s.bucket.Delete(context.Background(), common.RequestObjectName(agentID, uuid))
+				if err != nil {
+					s.logger.Error("Error deleting object from object storage", zap.Error(err))
+				}
+				err = s.bucket.Delete(context.Background(), common.ResponseObjectName(agentID, uuid))
+				if err != nil {
+					s.logger.Error("Error deleting object from object storage", zap.Error(err))
+				}
+			}()
+		}
 	}
 
 	topic := topics.ResponseTopic(agentID, uuid)
@@ -292,6 +325,8 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	dataCh := make(chan *data.HTTPResponseData)
 	s.bus.RegisterTopics(uuid)
+	defer s.bus.DeregisterTopics(uuid)
+
 	handler := bus.Handler{
 		Handle: func(ctx context.Context, e bus.Event) {
 			s.logger.Debug("Received message from bus")
@@ -300,6 +335,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Matcher: uuid,
 	}
 	s.bus.RegisterHandler(uuid, handler)
+	defer s.bus.DeregisterHandler(uuid)
 
 	bodyBytes, err := io.ReadAll(r.Body)
 
@@ -412,24 +448,23 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		s.logger.Debug("Writing response...")
 		w.WriteHeader(int(httpResponseData.StatusCode))
 		w.Write([]byte(httpResponseData.Body.Body))
+		if s.commonConfig.Telemetry.Enabled {
+			elapsed := time.Since(start)
+			s.logger.Debug("Request took " + elapsed.String())
+			s.httpRequestDurationSeconds.Record(context.Background(), elapsed.Seconds())
+		}
+		return
 	case <-ctx.Done():
 		s.logger.Debug("Request timed out...")
 		if ctx.Err() == context.DeadlineExceeded {
 			w.WriteHeader(http.StatusRequestTimeout)
 			w.Write([]byte("The request timed out."))
-		}
-		return
-	}
-	s.bus.DeregisterHandler(uuid)
-	s.bus.DeregisterTopics(uuid)
-	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && s.commonConfig.StorageRelay.Deletion {
-		err = s.bucket.Delete(context.Background(), common.RequestObjectName(agentID, uuid))
-		if err != nil {
-			s.logger.Error("Error deleting object from object storage", zap.Error(err))
-		}
-		err = s.bucket.Delete(context.Background(), common.ResponseObjectName(agentID, uuid))
-		if err != nil {
-			s.logger.Error("Error deleting object from object storage", zap.Error(err))
+			if s.commonConfig.Telemetry.Enabled {
+				elapsed := time.Since(start)
+				s.logger.Debug("Request took " + elapsed.String())
+				s.httpRequestDurationSeconds.Record(context.Background(), elapsed.Seconds())
+			}
+			return
 		}
 	}
 }

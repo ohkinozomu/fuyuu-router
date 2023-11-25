@@ -28,13 +28,24 @@ func Serialize[T proto.Message](value T, format string) ([]byte, error) {
 	switch format {
 	case "json":
 		payload, err = json.Marshal(value)
+		// fallback
+		if err != nil {
+			payload, err = proto.Marshal(value)
+			if err != nil {
+				return nil, err
+			}
+		}
 	case "protobuf":
 		payload, err = proto.Marshal(value)
+		// fallback
+		if err != nil {
+			payload, err = json.Marshal(value)
+			if err != nil {
+				return nil, err
+			}
+		}
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	return payload, nil
@@ -54,8 +65,22 @@ func Deserialize[T proto.Message](payload []byte, format string) (T, error) {
 	switch format {
 	case "json":
 		err = json.Unmarshal(payload, result)
+		// fallback
+		if err != nil {
+			err = proto.Unmarshal(payload, result)
+			if err != nil {
+				return result, err
+			}
+		}
 	case "protobuf":
 		err = proto.Unmarshal(payload, result)
+		// fallback
+		if err != nil {
+			err = json.Unmarshal(payload, result)
+			if err != nil {
+				return result, err
+			}
+		}
 	default:
 		return result, fmt.Errorf("unknown format: %s", format)
 	}

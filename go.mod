@@ -3,7 +3,7 @@ module github.com/ohkinozomu/fuyuu-router
 go 1.21.1
 
 require (
-	github.com/eclipse/paho.golang v0.12.1-0.20231120222709-28d6df34d833
+	github.com/eclipse/paho.golang v0.12.1-0.20231123225550-a6def521ee1a
 	github.com/go-playground/validator/v10 v10.16.0
 	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.1

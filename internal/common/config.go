@@ -59,7 +59,7 @@ func CreateConfig(configPath string) (CommonConfigV2, error) {
 	viper.SetDefault("networking.compress", "none")
 	viper.SetDefault("networking.large_data_policy", "none")
 	// based on AWS IoT Core's limit: https://docs.aws.amazon.com/general/latest/gr/iot-core.html#message-broker-limits
-	viper.SetDefault("split.threshold_bytes", 128000)
+	viper.SetDefault("split.chunk_bytes", 128000)
 	viper.SetDefault("storage_relay.threshold_bytes", 128000)
 	viper.SetConfigFile(configPath)
 

@@ -55,7 +55,7 @@ type CommonConfigV2 struct {
 func CreateConfig(configPath string) (CommonConfigV2, error) {
 	var config CommonConfigV2
 
-	viper.SetDefault("networking.format", "json")
+	viper.SetDefault("networking.format", "protobuf")
 	viper.SetDefault("networking.compress", "none")
 	viper.SetDefault("networking.large_data_policy", "none")
 	// based on AWS IoT Core's limit: https://docs.aws.amazon.com/general/latest/gr/iot-core.html#message-broker-limits

@@ -143,11 +143,7 @@ func newServer(c HubConfig) server {
 	}
 	var encoder *zstd.Encoder
 	if c.CommonConfigV2.Networking.Compress == "zstd" {
-		encoder, err = zstd.NewWriter(nil)
-		if err != nil {
-			c.Logger.Fatal(err.Error())
-		}
-		decoder, err = zstd.NewReader(nil)
+		encoder, err = zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}

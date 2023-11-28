@@ -208,7 +208,12 @@ func newServer(c AgentConfig) server {
 	}
 	var encoder *zstd.Encoder
 	if c.CommonConfigV2.Networking.Compress == "zstd" {
-		encoder, err = zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1), zstd.WithLowerEncoderMem(true))
+		encoder, err = zstd.NewWriter(
+			nil,
+			zstd.WithEncoderConcurrency(1),
+			zstd.WithLowerEncoderMem(true),
+			zstd.WithWindowSize(1<<20),
+		)
 		if err != nil {
 			c.Logger.Fatal(err.Error())
 		}

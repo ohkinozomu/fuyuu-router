@@ -202,7 +202,10 @@ func newServer(c AgentConfig) server {
 		c.Logger.Fatal(err.Error())
 	}
 
-	decoder, err := zstd.NewReader(nil)
+	decoder, err := zstd.NewReader(
+		nil,
+		zstd.WithDecoderConcurrency(1),
+	)
 	if err != nil {
 		c.Logger.Fatal(err.Error())
 	}

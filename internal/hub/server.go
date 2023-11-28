@@ -140,6 +140,7 @@ func newServer(c HubConfig) server {
 	decoder, err := zstd.NewReader(
 		nil,
 		zstd.WithDecoderConcurrency(1),
+		zstd.WithDecoderLowmem(true),
 	)
 	if err != nil {
 		c.Logger.Fatal(err.Error())

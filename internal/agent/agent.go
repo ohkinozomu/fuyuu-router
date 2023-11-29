@@ -387,6 +387,10 @@ func (s *server) sendUnsplitData(requestID string, httpResponse []byte, statusCo
 		}
 	}
 
+	if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
+		body.Body = s.encoder.EncodeAll(body.Body, nil)
+	}
+
 	responseData := data.HTTPResponseData{
 		Body:       &body,
 		StatusCode: int32(statusCode),
@@ -494,6 +498,15 @@ func Start(c AgentConfig) {
 					s.logger.Error("Error deserializing request data", zap.Error(err))
 					return
 				}
+
+				if requestPacket.Compress == "zstd" && s.decoder != nil {
+					httpRequestData.Body.Body, err = s.decoder.DecodeAll(httpRequestData.Body.Body, nil)
+					if err != nil {
+						s.logger.Error("Error decoding request body", zap.Error(err))
+						return
+					}
+				}
+
 				if httpRequestData.Body.Type == "split" {
 					s.logger.Debug("Received split message")
 					s.mergeCh <- mergeChPayload{
@@ -531,13 +544,6 @@ func Start(c AgentConfig) {
 				}
 
 				var err error
-				if processChPayload.requestPacket.Compress == "zstd" && s.decoder != nil {
-					processChPayload.httpRequestData.Body.Body, err = s.decoder.DecodeAll(processChPayload.httpRequestData.Body.Body, nil)
-					if err != nil {
-						s.logger.Error("Error decoding request body", zap.Error(err))
-						return
-					}
-				}
 
 				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
 				if err != nil {
@@ -558,10 +564,6 @@ func Start(c AgentConfig) {
 						return
 					}
 				} else {
-					if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
-						httpResponse = s.encoder.EncodeAll(httpResponse, nil)
-					}
-
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
 						err = s.sendSplitData(processChPayload.requestPacket.RequestId, httpResponse, statusCode, responseHeader)
 						if err != nil {

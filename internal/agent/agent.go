@@ -353,15 +353,6 @@ func Start(c AgentConfig) {
 					s.logger.Error("Error deserializing request data", zap.Error(err))
 					return
 				}
-
-				if requestPacket.Compress == "zstd" && s.decoder != nil {
-					httpRequestData.Body.Body, err = s.decoder.DecodeAll(httpRequestData.Body.Body, nil)
-					if err != nil {
-						s.logger.Error("Error decoding request body", zap.Error(err))
-						return
-					}
-				}
-
 				if httpRequestData.Body.Type == "split" {
 					s.logger.Debug("Received split message")
 					s.mergeCh <- mergeChPayload{
@@ -400,6 +391,14 @@ func Start(c AgentConfig) {
 				}
 
 				var err error
+				if processChPayload.requestPacket.Compress == "zstd" && s.decoder != nil {
+					processChPayload.httpRequestData.Body.Body, err = s.decoder.DecodeAll(processChPayload.httpRequestData.Body.Body, nil)
+					if err != nil {
+						s.logger.Error("Error decoding request body", zap.Error(err))
+						return
+					}
+				}
+
 				var responseData data.HTTPResponseData
 				var objectName string
 				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
@@ -421,7 +420,7 @@ func Start(c AgentConfig) {
 					}
 
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
-						processFn := func(sequence int, b []byte) ([]byte, error) {
+						processFn := func(sequence int, b []byte) (any, error) {
 							body := data.HTTPBody{
 								Body: b,
 								Type: "split",
@@ -450,12 +449,12 @@ func Start(c AgentConfig) {
 							return responsePayload, nil
 						}
 
-						sendFn := func(payload []byte) error {
+						sendFn := func(payload any) error {
 							responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
 							_, err = s.client.Publish(context.Background(), &paho.Publish{
 								Topic:   responseTopic,
 								QoS:     0,
-								Payload: payload,
+								Payload: payload.([]byte),
 							})
 							if err != nil {
 								return err

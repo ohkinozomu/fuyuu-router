@@ -351,7 +351,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var body data.HTTPBody
 
 	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
-		processFn := func(sequence int, b []byte) (any, error) {
+		processFn := func(sequence int, b []byte) ([]byte, error) {
 			body = data.HTTPBody{
 				Body: b,
 				Type: "split",
@@ -381,10 +381,10 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			return requestPayload, nil
 		}
 
-		sendFn := func(payload any) error {
+		sendFn := func(payload []byte) error {
 			requestTopic := topics.RequestTopic(agentID)
 			_, err = s.client.Publish(context.Background(), &paho.Publish{
-				Payload: payload.([]byte),
+				Payload: payload,
 				Topic:   requestTopic,
 			})
 			if err != nil {
@@ -555,7 +555,7 @@ func (s *server) startHTTP1(c HubConfig) {
 				}()
 			case busChPayload := <-s.busCh:
 				go func() {
-					s.logger.Debug("Writing response to database...")
+					s.logger.Debug("Emitting message to bus")
 
 					if busChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
 						var err error
@@ -571,7 +571,7 @@ func (s *server) startHTTP1(c HubConfig) {
 						if strings.Contains(err.Error(), fmt.Sprintf("bus: topic(%s) not found", busChPayload.responsePacket.RequestId)) {
 							return
 						}
-						s.logger.Info("Error setting key in database: " + err.Error())
+						s.logger.Error("Error emitting message to bus: " + err.Error())
 						return
 					}
 				}()

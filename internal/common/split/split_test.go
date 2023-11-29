@@ -1,7 +1,6 @@
 package split
 
 import (
-	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -71,18 +70,13 @@ func TestSplitAndMerge(t *testing.T) {
 	doneCh := make(chan bool)
 	merger := NewMerger()
 
-	mockProcessFn := func(sequence int, data []byte) (any, error) {
+	mockProcessFn := func(sequence int, data []byte) ([]byte, error) {
 		return data, nil
 	}
 
 	go func() {
-		err := Split(id, originalData, chunkSize, format, mockProcessFn, func(chunk any) error {
-			serializedChunk, ok := chunk.([]byte)
-			if !ok {
-				return fmt.Errorf("invalid chunk type")
-			}
-
-			dataCh <- serializedChunk
+		err := Split(id, originalData, chunkSize, format, mockProcessFn, func(chunk []byte) error {
+			dataCh <- chunk
 			return nil
 		})
 		if err != nil {

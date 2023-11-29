@@ -280,6 +280,147 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) ([]byte, int
 	return responseBody.Bytes(), resp.StatusCode, resp.Header, nil
 }
 
+func (s *server) sendSplitData(requestID string, httpResponse []byte, statusCode int, responseHeader http.Header) error {
+	processFn := func(sequence int, b []byte) ([]byte, error) {
+		body := data.HTTPBody{
+			Body: b,
+			Type: "split",
+		}
+		protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
+		responseData := data.HTTPResponseData{
+			Body:       &body,
+			StatusCode: int32(statusCode),
+			Headers:    &protoHeaders,
+		}
+
+		var err error
+		b, err = data.Serialize(&responseData, s.commonConfig.Networking.Format)
+		if err != nil {
+			return nil, err
+		}
+		responsePacket := data.HTTPResponsePacket{
+			RequestId:        requestID,
+			HttpResponseData: b,
+			Compress:         s.commonConfig.Networking.Compress,
+		}
+
+		responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
+		if err != nil {
+			return nil, err
+		}
+		return responsePayload, nil
+	}
+
+	sendFn := func(payload []byte) error {
+		responseTopic := topics.ResponseTopic(s.id, requestID)
+		_, err := s.client.Publish(context.Background(), &paho.Publish{
+			Topic:   responseTopic,
+			QoS:     0,
+			Payload: payload,
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	err := split.Split(requestID, httpResponse, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *server) sendResponseData(responseData *data.HTTPResponseData, requestID string) error {
+	b, err := data.Serialize(responseData, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+	responsePacket := data.HTTPResponsePacket{
+		RequestId:        requestID,
+		HttpResponseData: b,
+		Compress:         s.commonConfig.Networking.Compress,
+	}
+
+	responseTopic := topics.ResponseTopic(s.id, requestID)
+
+	responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+
+	s.logger.Debug("Publishing response")
+	_, err = s.client.Publish(context.Background(), &paho.Publish{
+		Topic:   responseTopic,
+		QoS:     0,
+		Payload: responsePayload,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *server) sendUnsplitData(requestID string, httpResponse []byte, statusCode int, responseHeader http.Header) error {
+	var objectName string
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
+		objectName = common.ResponseObjectName(s.id, requestID)
+		err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(httpResponse))
+		if err != nil {
+			return err
+		}
+	}
+	protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
+
+	var body data.HTTPBody
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
+		s.logger.Debug("Using storage relay")
+		s.logger.Debug("Object name: " + objectName)
+		body = data.HTTPBody{
+			Body: []byte(objectName),
+			Type: "storage_relay",
+		}
+	} else {
+		body = data.HTTPBody{
+			Body: []byte(httpResponse),
+			Type: "data",
+		}
+	}
+
+	responseData := data.HTTPResponseData{
+		Body:       &body,
+		StatusCode: int32(statusCode),
+		Headers:    &protoHeaders,
+	}
+	b, err := data.Serialize(&responseData, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+	responsePacket := data.HTTPResponsePacket{
+		RequestId:        requestID,
+		HttpResponseData: b,
+		Compress:         s.commonConfig.Networking.Compress,
+	}
+
+	responseTopic := topics.ResponseTopic(s.id, requestID)
+
+	responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+
+	s.logger.Debug("Publishing response")
+	_, err = s.client.Publish(context.Background(), &paho.Publish{
+		Topic:   responseTopic,
+		QoS:     0,
+		Payload: responsePayload,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func Start(c AgentConfig) {
 	if c.Protocol != "http1" {
 		c.Logger.Fatal("Unknown protocol: " + c.Protocol)
@@ -383,7 +524,6 @@ func Start(c AgentConfig) {
 		case processChPayload := <-s.processCh:
 			go func() {
 				s.logger.Debug("Processing request")
-				var responsePacket data.HTTPResponsePacket
 
 				if s.protocol != "http1" {
 					s.logger.Error("Unknown protocol: " + s.protocol)
@@ -399,14 +539,12 @@ func Start(c AgentConfig) {
 					}
 				}
 
-				var responseData data.HTTPResponseData
-				var objectName string
 				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
 				if err != nil {
 					s.logger.Error("Error sending HTTP request", zap.Error(err))
 					protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
 					// For now, not apply the storage relay to the error
-					responseData = data.HTTPResponseData{
+					responseData := data.HTTPResponseData{
 						Body: &data.HTTPBody{
 							Body: []byte(err.Error()),
 							Type: "data",
@@ -414,120 +552,29 @@ func Start(c AgentConfig) {
 						StatusCode: http.StatusInternalServerError,
 						Headers:    &protoHeaders,
 					}
+					err := s.sendResponseData(&responseData, processChPayload.requestPacket.RequestId)
+					if err != nil {
+						s.logger.Error("Error sending response data", zap.Error(err))
+						return
+					}
 				} else {
 					if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
 						httpResponse = s.encoder.EncodeAll(httpResponse, nil)
 					}
 
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
-						processFn := func(sequence int, b []byte) ([]byte, error) {
-							body := data.HTTPBody{
-								Body: b,
-								Type: "split",
-							}
-							protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
-							responseData = data.HTTPResponseData{
-								Body:       &body,
-								StatusCode: int32(statusCode),
-								Headers:    &protoHeaders,
-							}
-
-							b, err = data.Serialize(&responseData, s.commonConfig.Networking.Format)
-							if err != nil {
-								return nil, err
-							}
-							responsePacket = data.HTTPResponsePacket{
-								RequestId:        processChPayload.requestPacket.RequestId,
-								HttpResponseData: b,
-								Compress:         s.commonConfig.Networking.Compress,
-							}
-
-							responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
-							if err != nil {
-								return nil, err
-							}
-							return responsePayload, nil
-						}
-
-						sendFn := func(payload []byte) error {
-							responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
-							_, err = s.client.Publish(context.Background(), &paho.Publish{
-								Topic:   responseTopic,
-								QoS:     0,
-								Payload: payload,
-							})
-							if err != nil {
-								return err
-							}
-							return nil
-						}
-
-						err := split.Split(processChPayload.requestPacket.RequestId, httpResponse, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
+						err = s.sendSplitData(processChPayload.requestPacket.RequestId, httpResponse, statusCode, responseHeader)
 						if err != nil {
-							s.logger.Error("Error splitting message", zap.Error(err))
+							s.logger.Error("Error sending split data", zap.Error(err))
 							return
 						}
 					} else {
-						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
-							objectName = common.ResponseObjectName(s.id, processChPayload.requestPacket.RequestId)
-							err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(httpResponse))
-							if err != nil {
-								s.logger.Error("Error uploading object to object storage", zap.Error(err))
-								return
-							}
-						}
-						protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
-
-						var body data.HTTPBody
-						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
-							s.logger.Debug("Using storage relay")
-							s.logger.Debug("Object name: " + objectName)
-							body = data.HTTPBody{
-								Body: []byte(objectName),
-								Type: "storage_relay",
-							}
-						} else {
-							body = data.HTTPBody{
-								Body: []byte(httpResponse),
-								Type: "data",
-							}
-						}
-
-						responseData = data.HTTPResponseData{
-							Body:       &body,
-							StatusCode: int32(statusCode),
-							Headers:    &protoHeaders,
+						err = s.sendUnsplitData(processChPayload.requestPacket.RequestId, httpResponse, statusCode, responseHeader)
+						if err != nil {
+							s.logger.Error("Error sending unsplit data", zap.Error(err))
+							return
 						}
 					}
-				}
-				b, err := data.Serialize(&responseData, s.commonConfig.Networking.Format)
-				if err != nil {
-					s.logger.Error("Error serializing response data", zap.Error(err))
-					return
-				}
-				responsePacket = data.HTTPResponsePacket{
-					RequestId:        processChPayload.requestPacket.RequestId,
-					HttpResponseData: b,
-					Compress:         s.commonConfig.Networking.Compress,
-				}
-
-				responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
-
-				responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
-				if err != nil {
-					s.logger.Error("Error serializing response packet", zap.Error(err))
-					return
-				}
-
-				s.logger.Debug("Publishing response")
-				_, err = s.client.Publish(context.Background(), &paho.Publish{
-					Topic:   responseTopic,
-					QoS:     0,
-					Payload: responsePayload,
-				})
-				if err != nil {
-					s.logger.Error("Error publishing response", zap.Error(err))
-					return
 				}
 			}()
 		}

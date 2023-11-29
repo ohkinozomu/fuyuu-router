@@ -342,15 +342,16 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.bus.RegisterHandler(uuid, handler)
 	defer s.bus.DeregisterHandler(uuid)
 
-	bodyBytes, err := io.ReadAll(r.Body)
-
-	if s.encoder != nil {
-		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
-	}
-
+	var bodyBytes []byte
 	var body data.HTTPBody
 
 	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
+		bodyBytes, err = io.ReadAll(r.Body)
+		if err != nil {
+			s.logger.Error("Error reading request body", zap.Error(err))
+			return
+		}
+
 		processFn := func(sequence int, b []byte) ([]byte, error) {
 			body = data.HTTPBody{
 				Body: b,
@@ -378,6 +379,9 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
+			if s.encoder != nil {
+				requestPayload = s.encoder.EncodeAll(requestPayload, nil)
+			}
 			return requestPayload, nil
 		}
 
@@ -399,6 +403,16 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		bodyBytes, err = io.ReadAll(r.Body)
+		if err != nil {
+			s.logger.Error("Error reading request body", zap.Error(err))
+			return
+		}
+
+		if s.encoder != nil {
+			bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
+		}
+
 		if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
 			body = data.HTTPBody{
 				Body: []byte(objectName),
@@ -526,6 +540,16 @@ func (s *server) startHTTP1(c HubConfig) {
 						s.logger.Info("Error deserializing HTTP response data: " + err.Error())
 						return
 					}
+
+					if httpResponsePacket.Compress == "zstd" && s.decoder != nil {
+						var err error
+						httpResponseData.Body.Body, err = s.decoder.DecodeAll(httpResponseData.Body.Body, nil)
+						if err != nil {
+							s.logger.Info("Error decompressing message: " + err.Error())
+							return
+						}
+					}
+
 					if httpResponseData.Body.Type == "split" {
 						s.logger.Debug("Received split message")
 						s.mergeCh <- mergeChPayload{
@@ -556,15 +580,6 @@ func (s *server) startHTTP1(c HubConfig) {
 			case busChPayload := <-s.busCh:
 				go func() {
 					s.logger.Debug("Emitting message to bus")
-
-					if busChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
-						var err error
-						busChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(busChPayload.httpResponseData.Body.Body, nil)
-						if err != nil {
-							s.logger.Info("Error decompressing message: " + err.Error())
-							return
-						}
-					}
 
 					err := s.bus.Emit(context.Background(), busChPayload.responsePacket.RequestId, busChPayload.httpResponseData)
 					if err != nil {

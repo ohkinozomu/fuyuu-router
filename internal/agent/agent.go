@@ -353,6 +353,15 @@ func Start(c AgentConfig) {
 					s.logger.Error("Error deserializing request data", zap.Error(err))
 					return
 				}
+
+				if requestPacket.Compress == "zstd" && s.decoder != nil {
+					httpRequestData.Body.Body, err = s.decoder.DecodeAll(httpRequestData.Body.Body, nil)
+					if err != nil {
+						s.logger.Error("Error decoding request body", zap.Error(err))
+						return
+					}
+				}
+
 				if httpRequestData.Body.Type == "split" {
 					s.logger.Debug("Received split message")
 					s.mergeCh <- mergeChPayload{
@@ -391,14 +400,6 @@ func Start(c AgentConfig) {
 				}
 
 				var err error
-				if processChPayload.requestPacket.Compress == "zstd" && s.decoder != nil {
-					processChPayload.httpRequestData.Body.Body, err = s.decoder.DecodeAll(processChPayload.httpRequestData.Body.Body, nil)
-					if err != nil {
-						s.logger.Error("Error decoding request body", zap.Error(err))
-						return
-					}
-				}
-
 				var responseData data.HTTPResponseData
 				var objectName string
 				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
@@ -415,10 +416,6 @@ func Start(c AgentConfig) {
 						Headers:    &protoHeaders,
 					}
 				} else {
-					if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
-						httpResponse = s.encoder.EncodeAll(httpResponse, nil)
-					}
-
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
 						processFn := func(sequence int, b []byte) ([]byte, error) {
 							body := data.HTTPBody{
@@ -446,6 +443,11 @@ func Start(c AgentConfig) {
 							if err != nil {
 								return nil, err
 							}
+
+							if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
+								responsePayload = s.encoder.EncodeAll(responsePayload, nil)
+							}
+
 							return responsePayload, nil
 						}
 
@@ -468,6 +470,10 @@ func Start(c AgentConfig) {
 							return
 						}
 					} else {
+						if s.encoder != nil {
+							httpResponse = s.encoder.EncodeAll(httpResponse, nil)
+						}
+
 						if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
 							objectName = common.ResponseObjectName(s.id, processChPayload.requestPacket.RequestId)
 							err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(httpResponse))

@@ -49,15 +49,21 @@ func (m *Merger) GetCombinedData(chunk *data.HTTPBodyChunk) []byte {
 		return nil
 	}
 
-	var sequences []int
+	sequences := make([]int, 0, len(m.chunks[chunk.RequestId]))
 	for seq := range m.chunks[chunk.RequestId] {
 		sequences = append(sequences, seq)
 	}
 	sort.Ints(sequences)
 
-	var combinedData []byte
+	totalSize := 0
 	for _, seq := range sequences {
-		combinedData = append(combinedData, m.chunks[chunk.RequestId][seq]...)
+		totalSize += len(m.chunks[chunk.RequestId][seq])
+	}
+	combinedData := make([]byte, totalSize)
+	currentIndex := 0
+	for _, seq := range sequences {
+		copy(combinedData[currentIndex:], m.chunks[chunk.RequestId][seq])
+		currentIndex += len(m.chunks[chunk.RequestId][seq])
 	}
 
 	return combinedData

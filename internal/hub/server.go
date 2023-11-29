@@ -342,17 +342,16 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.bus.RegisterHandler(uuid, handler)
 	defer s.bus.DeregisterHandler(uuid)
 
-	var bodyBytes []byte
+	bodyBytes, err := io.ReadAll(r.Body)
+
+	if s.encoder != nil {
+		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
+	}
+
 	var body data.HTTPBody
 
 	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
-		bodyBytes, err = io.ReadAll(r.Body)
-		if err != nil {
-			s.logger.Error("Error reading request body", zap.Error(err))
-			return
-		}
-
-		processFn := func(sequence int, b []byte) ([]byte, error) {
+		processFn := func(sequence int, b []byte) (any, error) {
 			body = data.HTTPBody{
 				Body: b,
 				Type: "split",
@@ -379,18 +378,13 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
-
-			if s.encoder != nil {
-				requestPayload = s.encoder.EncodeAll(requestPayload, nil)
-			}
-
 			return requestPayload, nil
 		}
 
-		sendFn := func(payload []byte) error {
+		sendFn := func(payload any) error {
 			requestTopic := topics.RequestTopic(agentID)
 			_, err = s.client.Publish(context.Background(), &paho.Publish{
-				Payload: payload,
+				Payload: payload.([]byte),
 				Topic:   requestTopic,
 			})
 			if err != nil {
@@ -399,22 +393,12 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		err = split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
+		err := split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
 		if err != nil {
 			s.logger.Error("Error splitting message", zap.Error(err))
 			return
 		}
 	} else {
-		bodyBytes, err = io.ReadAll(r.Body)
-		if err != nil {
-			s.logger.Error("Error reading request body", zap.Error(err))
-			return
-		}
-
-		if s.encoder != nil {
-			bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
-		}
-
 		if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
 			body = data.HTTPBody{
 				Body: []byte(objectName),
@@ -542,16 +526,6 @@ func (s *server) startHTTP1(c HubConfig) {
 						s.logger.Info("Error deserializing HTTP response data: " + err.Error())
 						return
 					}
-
-					if httpResponsePacket.Compress == "zstd" && s.decoder != nil {
-						var err error
-						httpResponseData.Body.Body, err = s.decoder.DecodeAll(httpResponseData.Body.Body, nil)
-						if err != nil {
-							s.logger.Info("Error decompressing message: " + err.Error())
-							return
-						}
-					}
-
 					if httpResponseData.Body.Type == "split" {
 						s.logger.Debug("Received split message")
 						s.mergeCh <- mergeChPayload{
@@ -581,14 +555,23 @@ func (s *server) startHTTP1(c HubConfig) {
 				}()
 			case busChPayload := <-s.busCh:
 				go func() {
-					s.logger.Debug("Emitting message to bus")
+					s.logger.Debug("Writing response to database...")
+
+					if busChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
+						var err error
+						busChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(busChPayload.httpResponseData.Body.Body, nil)
+						if err != nil {
+							s.logger.Info("Error decompressing message: " + err.Error())
+							return
+						}
+					}
 
 					err := s.bus.Emit(context.Background(), busChPayload.responsePacket.RequestId, busChPayload.httpResponseData)
 					if err != nil {
 						if strings.Contains(err.Error(), fmt.Sprintf("bus: topic(%s) not found", busChPayload.responsePacket.RequestId)) {
 							return
 						}
-						s.logger.Error("Error emitting message to bus: " + err.Error())
+						s.logger.Info("Error setting key in database: " + err.Error())
 						return
 					}
 				}()

@@ -420,7 +420,7 @@ func Start(c AgentConfig) {
 					}
 
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
-						processFn := func(sequence int, b []byte) (any, error) {
+						processFn := func(sequence int, b []byte) ([]byte, error) {
 							body := data.HTTPBody{
 								Body: b,
 								Type: "split",
@@ -449,12 +449,12 @@ func Start(c AgentConfig) {
 							return responsePayload, nil
 						}
 
-						sendFn := func(payload any) error {
+						sendFn := func(payload []byte) error {
 							responseTopic := topics.ResponseTopic(s.id, processChPayload.requestPacket.RequestId)
 							_, err = s.client.Publish(context.Background(), &paho.Publish{
 								Topic:   responseTopic,
 								QoS:     0,
-								Payload: payload.([]byte),
+								Payload: payload,
 							})
 							if err != nil {
 								return err

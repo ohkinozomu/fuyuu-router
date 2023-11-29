@@ -54,5 +54,6 @@ data:
     [networking]
     format = "json"
     large_data_policy = "split"
+    compress = "zstd"
     [split]
     chunk_bytes = 1

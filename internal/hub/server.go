@@ -251,6 +251,124 @@ func newServer(c HubConfig) server {
 	}
 }
 
+func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
+	processFn := func(sequence int, b []byte) ([]byte, error) {
+		body := data.HTTPBody{
+			Body: b,
+			Type: "split",
+		}
+		protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
+		requestData := data.HTTPRequestData{
+			Method:  r.Method,
+			Path:    r.URL.Path,
+			Headers: &protoHeaders,
+			Body:    &body,
+		}
+
+		b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
+		if err != nil {
+			return nil, err
+		}
+
+		requestPacket := data.HTTPRequestPacket{
+			RequestId:       uuid,
+			HttpRequestData: b,
+			Compress:        s.commonConfig.Networking.Compress,
+		}
+		requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
+		if err != nil {
+			return nil, err
+		}
+		return requestPayload, nil
+	}
+
+	sendFn := func(payload []byte) error {
+		requestTopic := topics.RequestTopic(agentID)
+		_, err := s.client.Publish(context.Background(), &paho.Publish{
+			Payload: payload,
+			Topic:   requestTopic,
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+
+	if s.encoder != nil {
+		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
+	}
+
+	err = split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *server) sendUnsplitData(r *http.Request, uuid, agentID, objectName string) error {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.logger.Error("Error reading request body", zap.Error(err))
+		return err
+	}
+
+	if s.encoder != nil {
+		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
+	}
+
+	var body data.HTTPBody
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
+		body = data.HTTPBody{
+			Body: []byte(objectName),
+			Type: "storage_relay",
+		}
+	} else {
+		body = data.HTTPBody{
+			Body: bodyBytes,
+			Type: "data",
+		}
+	}
+	protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
+	requestData := data.HTTPRequestData{
+		Method:  r.Method,
+		Path:    r.URL.Path,
+		Headers: &protoHeaders,
+		Body:    &body,
+	}
+
+	b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+
+	requestPacket := data.HTTPRequestPacket{
+		RequestId:       uuid,
+		HttpRequestData: b,
+		Compress:        s.commonConfig.Networking.Compress,
+	}
+
+	requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+
+	requestTopic := topics.RequestTopic(agentID)
+	s.logger.Debug("Publishing request...")
+	_, err = s.client.Publish(context.Background(), &paho.Publish{
+		Payload: requestPayload,
+		Topic:   requestTopic,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var start time.Time
 	if s.commonConfig.Telemetry.Enabled {
@@ -342,108 +460,16 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.bus.RegisterHandler(uuid, handler)
 	defer s.bus.DeregisterHandler(uuid)
 
-	bodyBytes, err := io.ReadAll(r.Body)
-
-	if s.encoder != nil {
-		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
-	}
-
-	var body data.HTTPBody
-
 	if s.commonConfig.Networking.LargeDataPolicy == "split" && r.ContentLength > int64(s.commonConfig.Split.ChunkBytes) {
-		processFn := func(sequence int, b []byte) ([]byte, error) {
-			body = data.HTTPBody{
-				Body: b,
-				Type: "split",
-			}
-			protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
-			requestData := data.HTTPRequestData{
-				Method:  r.Method,
-				Path:    r.URL.Path,
-				Headers: &protoHeaders,
-				Body:    &body,
-			}
-
-			b, err = data.Serialize(&requestData, s.commonConfig.Networking.Format)
-			if err != nil {
-				return nil, err
-			}
-
-			requestPacket := data.HTTPRequestPacket{
-				RequestId:       uuid,
-				HttpRequestData: b,
-				Compress:        s.commonConfig.Networking.Compress,
-			}
-			requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
-			if err != nil {
-				return nil, err
-			}
-			return requestPayload, nil
-		}
-
-		sendFn := func(payload []byte) error {
-			requestTopic := topics.RequestTopic(agentID)
-			_, err = s.client.Publish(context.Background(), &paho.Publish{
-				Payload: payload,
-				Topic:   requestTopic,
-			})
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-
-		err := split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
+		err = s.sendSplitData(r, uuid, agentID)
 		if err != nil {
 			s.logger.Error("Error splitting message", zap.Error(err))
 			return
 		}
 	} else {
-		if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && r.ContentLength > int64(s.commonConfig.StorageRelay.ThresholdBytes) {
-			body = data.HTTPBody{
-				Body: []byte(objectName),
-				Type: "storage_relay",
-			}
-		} else {
-			body = data.HTTPBody{
-				Body: bodyBytes,
-				Type: "data",
-			}
-		}
-		protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
-		requestData := data.HTTPRequestData{
-			Method:  r.Method,
-			Path:    r.URL.Path,
-			Headers: &protoHeaders,
-			Body:    &body,
-		}
-
-		b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
+		err = s.sendUnsplitData(r, uuid, agentID, objectName)
 		if err != nil {
-			s.logger.Error("Error serializing request data", zap.Error(err))
-			return
-		}
-
-		requestPacket := data.HTTPRequestPacket{
-			RequestId:       uuid,
-			HttpRequestData: b,
-			Compress:        s.commonConfig.Networking.Compress,
-		}
-
-		requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
-		if err != nil {
-			s.logger.Error("Error serializing request packet", zap.Error(err))
-			return
-		}
-
-		requestTopic := topics.RequestTopic(agentID)
-		s.logger.Debug("Publishing request...")
-		_, err = s.client.Publish(context.Background(), &paho.Publish{
-			Payload: requestPayload,
-			Topic:   requestTopic,
-		})
-		if err != nil {
-			s.logger.Error("Error publishing request", zap.Error(err))
+			s.logger.Error("Error sending message", zap.Error(err))
 			return
 		}
 	}

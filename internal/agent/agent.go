@@ -281,7 +281,7 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) ([]byte, int
 }
 
 func (s *server) sendSplitData(requestID string, httpResponse []byte, statusCode int, responseHeader http.Header) error {
-	processFn := func(sequence int, b []byte) ([]byte, error) {
+	callbackFn := func(sequence int, b []byte) error {
 		body := data.HTTPBody{
 			Body: b,
 			Type: "split",
@@ -293,38 +293,15 @@ func (s *server) sendSplitData(requestID string, httpResponse []byte, statusCode
 			Headers:    &protoHeaders,
 		}
 
-		var err error
-		b, err = data.Serialize(&responseData, s.commonConfig.Networking.Format)
-		if err != nil {
-			return nil, err
-		}
-		responsePacket := data.HTTPResponsePacket{
-			RequestId:        requestID,
-			HttpResponseData: b,
-			Compress:         s.commonConfig.Networking.Compress,
-		}
-
-		responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
-		if err != nil {
-			return nil, err
-		}
-		return responsePayload, nil
-	}
-
-	sendFn := func(payload []byte) error {
-		responseTopic := topics.ResponseTopic(s.id, requestID)
-		_, err := s.client.Publish(context.Background(), &paho.Publish{
-			Topic:   responseTopic,
-			QoS:     0,
-			Payload: payload,
-		})
+		err := s.sendResponseData(&responseData, requestID)
 		if err != nil {
 			return err
 		}
+
 		return nil
 	}
 
-	err := split.Split(requestID, httpResponse, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
+	err := split.Split(requestID, httpResponse, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, callbackFn)
 	if err != nil {
 		return err
 	}
@@ -392,29 +369,7 @@ func (s *server) sendUnsplitData(requestID string, httpResponse []byte, statusCo
 		StatusCode: int32(statusCode),
 		Headers:    &protoHeaders,
 	}
-	b, err := data.Serialize(&responseData, s.commonConfig.Networking.Format)
-	if err != nil {
-		return err
-	}
-	responsePacket := data.HTTPResponsePacket{
-		RequestId:        requestID,
-		HttpResponseData: b,
-		Compress:         s.commonConfig.Networking.Compress,
-	}
-
-	responseTopic := topics.ResponseTopic(s.id, requestID)
-
-	responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
-	if err != nil {
-		return err
-	}
-
-	s.logger.Debug("Publishing response")
-	_, err = s.client.Publish(context.Background(), &paho.Publish{
-		Topic:   responseTopic,
-		QoS:     0,
-		Payload: responsePayload,
-	})
+	err := s.sendResponseData(&responseData, requestID)
 	if err != nil {
 		return err
 	}

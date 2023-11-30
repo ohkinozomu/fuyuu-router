@@ -70,12 +70,8 @@ func TestSplitAndMerge(t *testing.T) {
 	doneCh := make(chan bool)
 	merger := NewMerger()
 
-	mockProcessFn := func(sequence int, data []byte) ([]byte, error) {
-		return data, nil
-	}
-
 	go func() {
-		err := Split(id, originalData, chunkSize, format, mockProcessFn, func(chunk []byte) error {
+		err := Split(id, originalData, chunkSize, format, func(sequence int, chunk []byte) error {
 			dataCh <- chunk
 			return nil
 		})

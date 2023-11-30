@@ -252,7 +252,7 @@ func newServer(c HubConfig) server {
 }
 
 func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
-	processFn := func(sequence int, b []byte) ([]byte, error) {
+	callbackFn := func(sequence int, b []byte) error {
 		body := data.HTTPBody{
 			Body: b,
 			Type: "split",
@@ -267,7 +267,7 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 
 		b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		requestPacket := data.HTTPRequestPacket{
@@ -277,15 +277,11 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 		}
 		requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return requestPayload, nil
-	}
-
-	sendFn := func(payload []byte) error {
 		requestTopic := topics.RequestTopic(agentID)
-		_, err := s.client.Publish(context.Background(), &paho.Publish{
-			Payload: payload,
+		_, err = s.client.Publish(context.Background(), &paho.Publish{
+			Payload: requestPayload,
 			Topic:   requestTopic,
 		})
 		if err != nil {
@@ -303,7 +299,7 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
 	}
 
-	err = split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, processFn, sendFn)
+	err = split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, callbackFn)
 	if err != nil {
 		return err
 	}

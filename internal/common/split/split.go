@@ -16,7 +16,7 @@ func splitChunk(body []byte, chunkByte int) [][]byte {
 	return chunks
 }
 
-func Split(id string, bytes []byte, chunkSize int, format string, processFn func(int, []byte) ([]byte, error), sendFn func([]byte) error) error {
+func Split(id string, bytes []byte, chunkSize int, format string, callbackFn func(int, []byte) error) error {
 	chunks := splitChunk(bytes, chunkSize)
 
 	for sequence, chunk := range chunks {
@@ -30,11 +30,7 @@ func Split(id string, bytes []byte, chunkSize int, format string, processFn func
 		if err != nil {
 			return err
 		}
-		payload, err := processFn(sequence, b)
-		if err != nil {
-			return err
-		}
-		if err = sendFn(payload); err != nil {
+		if err = callbackFn(sequence, b); err != nil {
 			return err
 		}
 	}

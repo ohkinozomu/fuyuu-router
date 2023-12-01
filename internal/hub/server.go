@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -251,59 +252,103 @@ func newServer(c HubConfig) server {
 	}
 }
 
+func getRequestSize(r *http.Request) (int32, error) {
+	if r.ContentLength > 0 {
+		return int32(r.ContentLength), nil
+	} else if r.TransferEncoding != nil && len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked" {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			return 0, err
+		}
+		return int32(len(b)), nil
+	} else {
+		return 0, fmt.Errorf("unknown request size")
+	}
+}
+
+func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks int32, sequence int, r *http.Request, uuid, agentID string) error {
+	httpBodyChunk := data.HTTPBodyChunk{
+		RequestId: id,
+		Total:     totalChunks,
+		Sequence:  int32(sequence),
+		Data:      bytes,
+	}
+	b, err := data.Serialize(&httpBodyChunk, format)
+	if err != nil {
+		return err
+	}
+	body := data.HTTPBody{
+		Body: b,
+		Type: "split",
+	}
+	protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
+	requestData := data.HTTPRequestData{
+		Method:  r.Method,
+		Path:    r.URL.Path,
+		Headers: &protoHeaders,
+		Body:    &body,
+	}
+
+	br, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+
+	if s.encoder != nil {
+		br = s.encoder.EncodeAll(br, nil)
+	}
+
+	requestPacket := data.HTTPRequestPacket{
+		RequestId:       uuid,
+		HttpRequestData: br,
+		Compress:        s.commonConfig.Networking.Compress,
+	}
+	requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+
+	requestTopic := topics.RequestTopic(agentID)
+	_, err = s.client.Publish(context.Background(), &paho.Publish{
+		Payload: requestPayload,
+		Topic:   requestTopic,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
-	callbackFn := func(sequence int, b []byte) error {
-		body := data.HTTPBody{
-			Body: b,
-			Type: "split",
-		}
-		protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
-		requestData := data.HTTPRequestData{
-			Method:  r.Method,
-			Path:    r.URL.Path,
-			Headers: &protoHeaders,
-			Body:    &body,
-		}
+	buffer := make([]byte, s.commonConfig.Split.ChunkBytes)
 
-		b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
-		if err != nil {
-			return err
-		}
-
-		if s.encoder != nil {
-			b = s.encoder.EncodeAll(b, nil)
-		}
-
-		requestPacket := data.HTTPRequestPacket{
-			RequestId:       uuid,
-			HttpRequestData: b,
-			Compress:        s.commonConfig.Networking.Compress,
-		}
-		requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
-		if err != nil {
-			return err
-		}
-
-		requestTopic := topics.RequestTopic(agentID)
-		_, err = s.client.Publish(context.Background(), &paho.Publish{
-			Payload: requestPayload,
-			Topic:   requestTopic,
-		})
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
-	bodyBytes, err := io.ReadAll(r.Body)
+	total, err := getRequestSize(r)
 	if err != nil {
 		return err
 	}
 
-	err = split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, callbackFn)
-	if err != nil {
-		return err
+	totalChunks := int32(math.Ceil(float64(total) / float64(s.commonConfig.Split.ChunkBytes)))
+
+	sequence := 1
+	defer r.Body.Close()
+	for {
+		n, err := r.Body.Read(buffer)
+		if n > 0 {
+			err = s.sendOnce(uuid, buffer[:n], s.commonConfig.Networking.Format, totalChunks, sequence, r, uuid, agentID)
+			if err != nil {
+				return err
+			}
+			sequence++
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
 	}
+
 	return nil
 }
 

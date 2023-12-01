@@ -313,6 +313,11 @@ func (s *server) sendResponseData(responseData *data.HTTPResponseData, requestID
 	if err != nil {
 		return err
 	}
+
+	if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
+		b = s.encoder.EncodeAll(b, nil)
+	}
+
 	responsePacket := data.HTTPResponsePacket{
 		RequestId:        requestID,
 		HttpResponseData: b,
@@ -444,6 +449,14 @@ func Start(c AgentConfig) {
 					return
 				}
 
+				if requestPacket.Compress == "zstd" && s.decoder != nil {
+					requestPacket.HttpRequestData, err = s.decoder.DecodeAll(requestPacket.HttpRequestData, nil)
+					if err != nil {
+						s.logger.Error("Error decoding request body", zap.Error(err))
+						return
+					}
+				}
+
 				httpRequestData, err := data.DeserializeHTTPRequestData(requestPacket.HttpRequestData, s.commonConfig.Networking.Format, s.bucket)
 				if err != nil {
 					s.logger.Error("Error deserializing request data", zap.Error(err))
@@ -486,14 +499,6 @@ func Start(c AgentConfig) {
 				}
 
 				var err error
-				if processChPayload.requestPacket.Compress == "zstd" && s.decoder != nil {
-					processChPayload.httpRequestData.Body.Body, err = s.decoder.DecodeAll(processChPayload.httpRequestData.Body.Body, nil)
-					if err != nil {
-						s.logger.Error("Error decoding request body", zap.Error(err))
-						return
-					}
-				}
-
 				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
 				if err != nil {
 					s.logger.Error("Error sending HTTP request", zap.Error(err))
@@ -513,10 +518,6 @@ func Start(c AgentConfig) {
 						return
 					}
 				} else {
-					if s.commonConfig.Networking.Compress == "zstd" && s.encoder != nil {
-						httpResponse = s.encoder.EncodeAll(httpResponse, nil)
-					}
-
 					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
 						err = s.sendSplitData(processChPayload.requestPacket.RequestId, httpResponse, statusCode, responseHeader)
 						if err != nil {

@@ -270,6 +270,10 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 			return err
 		}
 
+		if s.encoder != nil {
+			b = s.encoder.EncodeAll(b, nil)
+		}
+
 		requestPacket := data.HTTPRequestPacket{
 			RequestId:       uuid,
 			HttpRequestData: b,
@@ -279,6 +283,7 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 		if err != nil {
 			return err
 		}
+
 		requestTopic := topics.RequestTopic(agentID)
 		_, err = s.client.Publish(context.Background(), &paho.Publish{
 			Payload: requestPayload,
@@ -295,10 +300,6 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 		return err
 	}
 
-	if s.encoder != nil {
-		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
-	}
-
 	err = split.Split(uuid, bodyBytes, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, callbackFn)
 	if err != nil {
 		return err
@@ -311,10 +312,6 @@ func (s *server) sendUnsplitData(r *http.Request, uuid, agentID, objectName stri
 	if err != nil {
 		s.logger.Error("Error reading request body", zap.Error(err))
 		return err
-	}
-
-	if s.encoder != nil {
-		bodyBytes = s.encoder.EncodeAll(bodyBytes, nil)
 	}
 
 	var body data.HTTPBody
@@ -340,6 +337,10 @@ func (s *server) sendUnsplitData(r *http.Request, uuid, agentID, objectName stri
 	b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
+	}
+
+	if s.encoder != nil {
+		b = s.encoder.EncodeAll(b, nil)
 	}
 
 	requestPacket := data.HTTPRequestPacket{
@@ -543,6 +544,15 @@ func (s *server) startHTTP1(c HubConfig) {
 						return
 					}
 
+					if httpResponsePacket.Compress == "zstd" && s.decoder != nil {
+						var err error
+						httpResponsePacket.HttpResponseData, err = s.decoder.DecodeAll(httpResponsePacket.HttpResponseData, nil)
+						if err != nil {
+							s.logger.Info("Error decompressing message: " + err.Error())
+							return
+						}
+					}
+
 					httpResponseData, err := data.DeserializeHTTPResponseData(httpResponsePacket.GetHttpResponseData(), s.commonConfig.Networking.Format, s.bucket)
 					if err != nil {
 						s.logger.Info("Error deserializing HTTP response data: " + err.Error())
@@ -578,15 +588,6 @@ func (s *server) startHTTP1(c HubConfig) {
 			case busChPayload := <-s.busCh:
 				go func() {
 					s.logger.Debug("Emitting message to bus")
-
-					if busChPayload.responsePacket.Compress == "zstd" && s.decoder != nil {
-						var err error
-						busChPayload.httpResponseData.Body.Body, err = s.decoder.DecodeAll(busChPayload.httpResponseData.Body.Body, nil)
-						if err != nil {
-							s.logger.Info("Error decompressing message: " + err.Error())
-							return
-						}
-					}
 
 					err := s.bus.Emit(context.Background(), busChPayload.responsePacket.RequestId, busChPayload.httpResponseData)
 					if err != nil {

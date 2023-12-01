@@ -7,7 +7,7 @@ require (
 	github.com/go-playground/validator/v10 v10.16.0
 	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.1
-	github.com/klauspost/compress v1.17.3
+	github.com/klauspost/compress v1.17.4
 	github.com/mustafaturan/bus/v3 v3.0.3
 	github.com/ohkinozomu/neutral-cp v0.1.4
 	github.com/prometheus/client_golang v1.17.0

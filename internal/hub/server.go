@@ -326,8 +326,10 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 	if err != nil {
 		return err
 	}
+	s.logger.Debug("Total request size: " + fmt.Sprintf("%d", total))
 
 	totalChunks := int32(math.Ceil(float64(total) / float64(s.commonConfig.Split.ChunkBytes)))
+	s.logger.Debug("Total chunks: " + fmt.Sprintf("%d", totalChunks))
 
 	sequence := 1
 	defer r.Body.Close()
@@ -335,6 +337,8 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 		n, err := r.Body.Read(buffer)
 		if n > 0 {
 			err = s.sendOnce(uuid, buffer[:n], s.commonConfig.Networking.Format, totalChunks, sequence, r, uuid, agentID)
+			s.logger.Debug("Sent chunk " + fmt.Sprintf("%d: %d", sequence, buffer[:n]))
+
 			if err != nil {
 				return err
 			}

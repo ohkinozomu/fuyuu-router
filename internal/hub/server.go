@@ -425,6 +425,7 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.logger.Debug("Handling request...")
+	s.logger.Debug("Request headers: " + fmt.Sprintf("%v", r.Header))
 
 	fuyuuRouterIDs := r.Header.Get("FuyuuRouter-IDs")
 	if fuyuuRouterIDs == "" {

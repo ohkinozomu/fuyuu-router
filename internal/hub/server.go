@@ -336,6 +336,8 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 	for {
 		n, readErr := r.Body.Read(buffer)
 		if n > 0 {
+			s.logger.Debug("Sending chunk " + fmt.Sprintf("%d", sequence))
+			s.logger.Debug("Chunk size: " + fmt.Sprintf("%d", n))
 			sendErr := s.sendOnce(uuid, buffer[:n], s.commonConfig.Networking.Format, totalChunks, sequence, r, uuid, agentID)
 			if sendErr != nil {
 				return sendErr

@@ -334,23 +334,21 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 	sequence := 1
 	defer r.Body.Close()
 	for {
-		n, err := r.Body.Read(buffer)
+		n, readErr := r.Body.Read(buffer)
 		if n > 0 {
-			err = s.sendOnce(uuid, buffer[:n], s.commonConfig.Networking.Format, totalChunks, sequence, r, uuid, agentID)
-			s.logger.Debug("Sent chunk: " + fmt.Sprintf("%d", sequence))
-
-			if err != nil {
-				return err
+			sendErr := s.sendOnce(uuid, buffer[:n], s.commonConfig.Networking.Format, totalChunks, sequence, r, uuid, agentID)
+			if sendErr != nil {
+				return sendErr
 			}
 			sequence++
 		}
 
-		if err != nil {
-			if err == io.EOF {
+		if readErr != nil {
+			if readErr == io.EOF {
 				s.logger.Debug("Finished sending chunks")
 				break
 			}
-			return err
+			return readErr
 		}
 	}
 

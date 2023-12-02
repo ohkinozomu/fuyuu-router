@@ -328,7 +328,7 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 	}
 	s.logger.Debug("Total request size based on getRequestSize: " + fmt.Sprintf("%d", total))
 	debugFn := func() int { b, _ := io.ReadAll(r.Body); return len(b) }
-	s.logger.Sugar().Debugf("Total request size: %d", debugFn)
+	s.logger.Sugar().Debugf("Total request size: %d", debugFn())
 
 	totalChunks := int32(math.Ceil(float64(total) / float64(s.commonConfig.Split.ChunkBytes)))
 	s.logger.Debug("Total chunks: " + fmt.Sprintf("%d", totalChunks))

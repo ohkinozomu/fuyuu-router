@@ -346,7 +346,7 @@ func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 		}
 
 		if readErr != nil {
-			if readErr == io.EOF {
+			if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
 				s.logger.Debug("Finished sending chunks")
 				break
 			}

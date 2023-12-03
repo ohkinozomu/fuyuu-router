@@ -56,4 +56,4 @@ data:
     large_data_policy = "split"
     compress = "zstd"
     [split]
-    chunk_bytes = 1
+    chunk_bytes = 3

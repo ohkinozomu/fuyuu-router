@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/thanos-io/objstore"
-	"google.golang.org/protobuf/proto"
 )
 
 func HTTPHeaderToProtoHeaders(httpHeader http.Header) HTTPHeaders {
@@ -29,13 +28,13 @@ func SerializeRequestPacket(packet *HTTPRequestPacket, format string) ([]byte, e
 		payload, err = json.Marshal(packet)
 		// fallback
 		if err != nil {
-			payload, err = proto.Marshal(packet)
+			payload, err = packet.MarshalVT()
 			if err != nil {
 				return nil, err
 			}
 		}
 	case "protobuf":
-		payload, err = proto.Marshal(packet)
+		payload, err = packet.MarshalVT()
 		// fallback
 		if err != nil {
 			payload, err = json.Marshal(packet)
@@ -58,13 +57,13 @@ func DeserializeRequestPacket(payload []byte, format string) (*HTTPRequestPacket
 		err = json.Unmarshal(payload, &requestPacket)
 		// fallback
 		if err != nil {
-			err = proto.Unmarshal(payload, &requestPacket)
+			err = requestPacket.UnmarshalVT(payload)
 			if err != nil {
 				return &requestPacket, err
 			}
 		}
 	case "protobuf":
-		err = proto.Unmarshal(payload, &requestPacket)
+		err = requestPacket.UnmarshalVT(payload)
 		// fallback
 		if err != nil {
 			err = json.Unmarshal(payload, &requestPacket)
@@ -86,13 +85,13 @@ func SerializeResponsePacket(responsePacket *HTTPResponsePacket, format string) 
 		responsePayload, err = json.Marshal(responsePacket)
 		// fallback
 		if err != nil {
-			responsePayload, err = proto.Marshal(responsePacket)
+			responsePayload, err = responsePacket.MarshalVT()
 			if err != nil {
 				return nil, err
 			}
 		}
 	case "protobuf":
-		responsePayload, err = proto.Marshal(responsePacket)
+		responsePayload, err = responsePacket.MarshalVT()
 		// fallback
 		if err != nil {
 			responsePayload, err = json.Marshal(responsePacket)
@@ -115,13 +114,13 @@ func DeserializeResponsePacket(payload []byte, format string) (*HTTPResponsePack
 		err = json.Unmarshal(payload, &responsePacket)
 		// fallback
 		if err != nil {
-			err = proto.Unmarshal(payload, &responsePacket)
+			err = responsePacket.UnmarshalVT(payload)
 			if err != nil {
 				return &responsePacket, err
 			}
 		}
 	case "protobuf":
-		err = proto.Unmarshal(payload, &responsePacket)
+		err = responsePacket.UnmarshalVT(payload)
 		// fallback
 		if err != nil {
 			err = json.Unmarshal(payload, &responsePacket)
@@ -143,13 +142,13 @@ func SerializeHTTPRequestData(httpRequestData *HTTPRequestData, format string) (
 		b, err = json.Marshal(httpRequestData)
 		// fallback
 		if err != nil {
-			b, err = proto.Marshal(httpRequestData)
+			b, err = httpRequestData.MarshalVT()
 			if err != nil {
 				return nil, err
 			}
 		}
 	case "protobuf":
-		b, err = proto.Marshal(httpRequestData)
+		b, err = httpRequestData.MarshalVT()
 		// fallback
 		if err != nil {
 			b, err = json.Marshal(httpRequestData)
@@ -188,13 +187,13 @@ func DeserializeHTTPRequestData(b []byte, format string, bucket objstore.Bucket)
 		err := json.Unmarshal(b, &httpRequestData)
 		if err != nil {
 			// fallback
-			if err := proto.Unmarshal(b, &httpRequestData); err != nil {
+			if err := httpRequestData.UnmarshalVT(b); err != nil {
 				return nil, fmt.Errorf("error unmarshalling message: %v", err)
 			}
 			return nil, fmt.Errorf("error unmarshalling message: %v", err)
 		}
 	case "protobuf":
-		err := proto.Unmarshal(b, &httpRequestData)
+		err := httpRequestData.UnmarshalVT(b)
 		if err != nil {
 			// fallback
 			if err := json.Unmarshal(b, &httpRequestData); err != nil {
@@ -225,13 +224,13 @@ func SerializeHTTPResponseData(httpResponseData *HTTPResponseData, format string
 		b, err = json.Marshal(httpResponseData)
 		if err != nil {
 			// fallback
-			b, err = proto.Marshal(httpResponseData)
+			b, err = httpResponseData.MarshalVT()
 			if err != nil {
 				return nil, err
 			}
 		}
 	case "protobuf":
-		b, err = proto.Marshal(httpResponseData)
+		b, err = httpResponseData.MarshalVT()
 		if err != nil {
 			// fallback
 			b, err = json.Marshal(httpResponseData)
@@ -252,13 +251,13 @@ func DeserializeHTTPResponseData(b []byte, format string, bucket objstore.Bucket
 		err := json.Unmarshal(b, &httpResponseData)
 		if err != nil {
 			// fallback
-			if err := proto.Unmarshal(b, &httpResponseData); err != nil {
+			if err := httpResponseData.UnmarshalVT(b); err != nil {
 				return nil, fmt.Errorf("error unmarshalling message: %v", err)
 			}
 			return nil, fmt.Errorf("error unmarshalling message: %v", err)
 		}
 	case "protobuf":
-		err := proto.Unmarshal(b, &httpResponseData)
+		err := httpResponseData.UnmarshalVT(b)
 		if err != nil {
 			// fallback
 			if err := json.Unmarshal(b, &httpResponseData); err != nil {
@@ -289,13 +288,13 @@ func SerializeHTTPBodyChunk(httpBodyChunk *HTTPBodyChunk, format string) ([]byte
 		b, err = json.Marshal(httpBodyChunk)
 		// fallback
 		if err != nil {
-			b, err = proto.Marshal(httpBodyChunk)
+			b, err = httpBodyChunk.MarshalVT()
 			if err != nil {
 				return nil, err
 			}
 		}
 	case "protobuf":
-		b, err = proto.Marshal(httpBodyChunk)
+		b, err = httpBodyChunk.MarshalVT()
 		// fallback
 		if err != nil {
 			b, err = json.Marshal(httpBodyChunk)
@@ -318,13 +317,13 @@ func DeserializeHTTPBodyChunk(payload []byte, format string) (*HTTPBodyChunk, er
 		err = json.Unmarshal(payload, &httpBodyChunk)
 		if err != nil {
 			// fallback
-			err = proto.Unmarshal(payload, &httpBodyChunk)
+			err = httpBodyChunk.UnmarshalVT(payload)
 			if err != nil {
 				return nil, err
 			}
 		}
 	case "protobuf":
-		err = proto.Unmarshal(payload, &httpBodyChunk)
+		err = httpBodyChunk.UnmarshalVT(payload)
 		if err != nil {
 			// fallback
 			err = json.Unmarshal(payload, &httpBodyChunk)

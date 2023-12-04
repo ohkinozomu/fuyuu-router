@@ -309,7 +309,7 @@ func (s *server) sendSplitData(requestID string, httpResponse []byte, statusCode
 }
 
 func (s *server) sendResponseData(responseData *data.HTTPResponseData, requestID string) error {
-	b, err := data.Serialize(responseData, s.commonConfig.Networking.Format)
+	b, err := data.SerializeHTTPResponseData(responseData, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
 	}
@@ -326,7 +326,7 @@ func (s *server) sendResponseData(responseData *data.HTTPResponseData, requestID
 
 	responseTopic := topics.ResponseTopic(s.id, requestID)
 
-	responsePayload, err := data.Serialize(&responsePacket, s.commonConfig.Networking.Format)
+	responsePayload, err := data.SerializeResponsePacket(&responsePacket, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
 	}
@@ -443,7 +443,7 @@ func Start(c AgentConfig) {
 		select {
 		case payload := <-s.payloadCh:
 			go func() {
-				requestPacket, err := data.Deserialize[*data.HTTPRequestPacket](payload, s.commonConfig.Networking.Format)
+				requestPacket, err := data.DeserializeRequestPacket(payload, s.commonConfig.Networking.Format)
 				if err != nil {
 					s.logger.Error("Error deserializing request packet", zap.Error(err))
 					return

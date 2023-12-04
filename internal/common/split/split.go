@@ -26,7 +26,7 @@ func Split(id string, bytes []byte, chunkSize int, format string, callbackFn fun
 			Sequence:  int32(sequence + 1),
 			Data:      chunk,
 		}
-		b, err := data.Serialize(&httpBodyChunk, format)
+		b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, format)
 		if err != nil {
 			return err
 		}
@@ -38,7 +38,7 @@ func Split(id string, bytes []byte, chunkSize int, format string, callbackFn fun
 }
 
 func Merge(merger *Merger, body []byte, format string) (combined []byte, completed bool, err error) {
-	chunk, err := data.Deserialize[*data.HTTPBodyChunk](body, format)
+	chunk, err := data.DeserializeHTTPBodyChunk(body, format)
 	if err != nil {
 		return nil, false, err
 	}

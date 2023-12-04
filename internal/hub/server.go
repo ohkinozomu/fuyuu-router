@@ -273,7 +273,7 @@ func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks in
 		Sequence:  int32(sequence),
 		Data:      bytes,
 	}
-	b, err := data.Serialize(&httpBodyChunk, format)
+	b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, format)
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks in
 		Body:    &body,
 	}
 
-	br, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
+	br, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
 	}
@@ -303,7 +303,7 @@ func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks in
 		HttpRequestData: br,
 		Compress:        s.commonConfig.Networking.Compress,
 	}
-	requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
+	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
 	}
@@ -384,7 +384,7 @@ func (s *server) sendUnsplitData(r *http.Request, uuid, agentID, objectName stri
 		Body:    &body,
 	}
 
-	b, err := data.Serialize(&requestData, s.commonConfig.Networking.Format)
+	b, err := data.SerializeHTTPRequestData(&requestData, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
 	}
@@ -399,7 +399,7 @@ func (s *server) sendUnsplitData(r *http.Request, uuid, agentID, objectName stri
 		Compress:        s.commonConfig.Networking.Compress,
 	}
 
-	requestPayload, err := data.Serialize(&requestPacket, s.commonConfig.Networking.Format)
+	requestPayload, err := data.SerializeRequestPacket(&requestPacket, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
 	}
@@ -589,7 +589,7 @@ func (s *server) startHTTP1(c HubConfig) {
 			case payload := <-s.payloadCh:
 				go func() {
 					s.logger.Debug("Received message")
-					httpResponsePacket, err := data.Deserialize[*data.HTTPResponsePacket](payload, s.commonConfig.Networking.Format)
+					httpResponsePacket, err := data.DeserializeResponsePacket(payload, s.commonConfig.Networking.Format)
 					if err != nil {
 						s.logger.Info("Error deserializing response packet: " + err.Error())
 						return

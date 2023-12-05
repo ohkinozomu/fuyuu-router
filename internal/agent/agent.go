@@ -6,6 +6,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -274,37 +277,75 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (*http.Respo
 	return response, nil
 }
 
-func (s *server) sendSplitData(requestID string, httpResponse *http.Response) error {
-	responseBody := new(bytes.Buffer)
-	_, err := responseBody.ReadFrom(httpResponse.Body)
-	if err != nil {
-		return err
-	}
-
-	callbackFn := func(sequence int, b []byte) error {
-		body := data.HTTPBody{
-			Body: b,
-			Type: "split",
-		}
-		protoHeaders := data.HTTPHeaderToProtoHeaders(httpResponse.Header)
-		responseData := data.HTTPResponseData{
-			Body:       &body,
-			StatusCode: int32(httpResponse.StatusCode),
-			Headers:    &protoHeaders,
-		}
-
-		err := s.sendResponseData(&responseData, requestID)
+func getResponseSize(r *http.Response) (int32, error) {
+	if r.ContentLength > 0 {
+		return int32(r.ContentLength), nil
+	} else if r.TransferEncoding != nil && len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked" {
+		b, err := io.ReadAll(r.Body)
 		if err != nil {
-			return err
+			return 0, err
 		}
-
-		return nil
+		return int32(len(b)), nil
+	} else {
+		return 0, fmt.Errorf("unknown response size")
 	}
+}
 
-	err = split.Split(requestID, responseBody.Bytes(), s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, callbackFn)
+func (s *server) sendSplitData(requestID string, httpResponse *http.Response) error {
+	buffer := make([]byte, s.commonConfig.Split.ChunkBytes)
+
+	total, err := getResponseSize(httpResponse)
 	if err != nil {
 		return err
 	}
+	s.logger.Debug("Total request size based on getRequestSize: " + fmt.Sprintf("%d", total))
+
+	totalChunks := int32(math.Ceil(float64(total) / float64(s.commonConfig.Split.ChunkBytes)))
+	s.logger.Debug("Total chunks: " + fmt.Sprintf("%d", totalChunks))
+
+	sequence := 1
+	for {
+		n, readErr := io.ReadFull(httpResponse.Body, buffer)
+		if n > 0 {
+			s.logger.Debug("Sending chunk " + fmt.Sprintf("%d", sequence))
+			s.logger.Debug("Chunk size: " + fmt.Sprintf("%d", n))
+			httpBodyChunk := data.HTTPBodyChunk{
+				RequestId: requestID,
+				Total:     totalChunks,
+				Sequence:  int32(sequence + 1),
+				Data:      buffer[:n],
+			}
+			b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
+			if err != nil {
+				return err
+			}
+			body := data.HTTPBody{
+				Body: b,
+				Type: "split",
+			}
+			protoHeaders := data.HTTPHeaderToProtoHeaders(httpResponse.Header)
+			responseData := data.HTTPResponseData{
+				Body:       &body,
+				StatusCode: int32(httpResponse.StatusCode),
+				Headers:    &protoHeaders,
+			}
+
+			sendErr := s.sendResponseData(&responseData, requestID)
+			if sendErr != nil {
+				return sendErr
+			}
+			sequence++
+		}
+
+		if readErr != nil {
+			if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+				s.logger.Debug("Finished sending chunks")
+				break
+			}
+			return readErr
+		}
+	}
+
 	return nil
 }
 

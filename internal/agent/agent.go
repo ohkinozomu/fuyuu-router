@@ -6,9 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -277,73 +275,78 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (*http.Respo
 	return response, nil
 }
 
-func getResponseSize(r *http.Response) (int32, error) {
-	if r.ContentLength > 0 {
-		return int32(r.ContentLength), nil
-	} else if r.TransferEncoding != nil && len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked" {
-		b, err := io.ReadAll(r.Body)
-		if err != nil {
-			return 0, err
-		}
-		return int32(len(b)), nil
-	} else {
-		return 0, fmt.Errorf("unknown response size")
+func (s *server) sendOnce(requestID string, isLast bool, sequence int32, d []byte, r http.Response) error {
+	httpBodyChunk := data.HTTPBodyChunk{
+		RequestId: requestID,
+		IsLast:    isLast,
+		Sequence:  int32(sequence),
+		Data:      d,
 	}
+	b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
+	if err != nil {
+		return err
+	}
+	body := data.HTTPBody{
+		Body: b,
+		Type: "split",
+	}
+	protoHeaders := data.HTTPHeaderToProtoHeaders(r.Header)
+	responseData := data.HTTPResponseData{
+		Body:       &body,
+		StatusCode: int32(r.StatusCode),
+		Headers:    &protoHeaders,
+	}
+	sendErr := s.sendResponseData(&responseData, requestID)
+	if sendErr != nil {
+		return sendErr
+	}
+	return nil
 }
 
 func (s *server) sendSplitData(requestID string, httpResponse *http.Response) error {
 	buffer := make([]byte, s.commonConfig.Split.ChunkBytes)
-
-	total, err := getResponseSize(httpResponse)
-	if err != nil {
-		return err
-	}
-	s.logger.Debug("Total request size based on getRequestSize: " + fmt.Sprintf("%d", total))
-
-	totalChunks := int32(math.Ceil(float64(total) / float64(s.commonConfig.Split.ChunkBytes)))
-	s.logger.Debug("Total chunks: " + fmt.Sprintf("%d", totalChunks))
-
 	sequence := 1
+	isLast := false
+	previousData := []byte{}
 	for {
 		n, readErr := io.ReadFull(httpResponse.Body, buffer)
-		if n > 0 {
-			s.logger.Debug("Sending chunk " + fmt.Sprintf("%d", sequence))
-			s.logger.Debug("Chunk size: " + fmt.Sprintf("%d", n))
-			httpBodyChunk := data.HTTPBodyChunk{
-				RequestId: requestID,
-				Total:     totalChunks,
-				Sequence:  int32(sequence + 1),
-				Data:      buffer[:n],
-			}
-			b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
-			if err != nil {
-				return err
-			}
-			body := data.HTTPBody{
-				Body: b,
-				Type: "split",
-			}
-			protoHeaders := data.HTTPHeaderToProtoHeaders(httpResponse.Header)
-			responseData := data.HTTPResponseData{
-				Body:       &body,
-				StatusCode: int32(httpResponse.StatusCode),
-				Headers:    &protoHeaders,
-			}
 
-			sendErr := s.sendResponseData(&responseData, requestID)
-			if sendErr != nil {
-				return sendErr
-			}
-			sequence++
+		if n > 0 {
+			s.logger.Debug(string(buffer[:n]))
+			previousData = make([]byte, n)
+			copy(previousData, buffer[:n])
 		}
 
 		if readErr != nil {
 			if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
-				s.logger.Debug("Finished sending chunks")
+				isLast = true
+				if len(previousData) > 0 {
+					err := s.sendOnce(requestID, isLast, int32(sequence), previousData, *httpResponse)
+					if err != nil {
+						return err
+					}
+				}
+				// The request is smaller than a chunk and only one packet is sent.
+				if len(previousData) == 0 {
+					err := s.sendOnce(requestID, isLast, int32(sequence), buffer[:n], *httpResponse)
+					if err != nil {
+						return err
+					}
+				}
 				break
+			} else {
+				s.logger.Error("Error reading request body", zap.Error(readErr))
+				return readErr
 			}
-			return readErr
+		} else {
+			if len(previousData) > 0 {
+				err := s.sendOnce(requestID, false, int32(sequence), previousData, *httpResponse)
+				if err != nil {
+					return err
+				}
+			}
 		}
+		sequence++
 	}
 
 	return nil
@@ -375,7 +378,7 @@ func (s *server) sendResponseData(responseData *data.HTTPResponseData, requestID
 	s.logger.Debug("Publishing response")
 	_, err = s.client.Publish(context.Background(), &paho.Publish{
 		Topic:   responseTopic,
-		QoS:     0,
+		QoS:     1,
 		Payload: responsePayload,
 	})
 	if err != nil {
@@ -428,9 +431,8 @@ func (s *server) sendUnsplitData(requestID string, httpResponse *http.Response) 
 	return nil
 }
 
-func (s *server) handleErr(requestID string, header http.Header, err error) {
+func (s *server) handleErr(requestID string, err error) {
 	s.logger.Error("Error sending HTTP request", zap.Error(err))
-	protoHeaders := data.HTTPHeaderToProtoHeaders(header)
 	// For now, not apply the storage relay to the error
 	responseData := data.HTTPResponseData{
 		Body: &data.HTTPBody{
@@ -438,7 +440,6 @@ func (s *server) handleErr(requestID string, header http.Header, err error) {
 			Type: "data",
 		},
 		StatusCode: http.StatusInternalServerError,
-		Headers:    &protoHeaders,
 	}
 	err = s.sendResponseData(&responseData, requestID)
 	if err != nil {
@@ -544,12 +545,14 @@ func Start(c AgentConfig) {
 			}()
 		case mergeChPayload := <-s.mergeCh:
 			go func() {
+				s.logger.Debug("Merging message")
 				combined, completed, err := split.Merge(s.merger, mergeChPayload.httpRequestData.Body.Body, s.commonConfig.Networking.Format)
 				if err != nil {
 					s.logger.Info("Error merging message: " + err.Error())
 					return
 				}
 				if completed {
+					s.logger.Debug("combined: " + string(combined))
 					mergeChPayload.httpRequestData.Body.Body = combined
 					s.processCh <- processChPayload(mergeChPayload)
 					s.merger.DeleteChunk(mergeChPayload.requestPacket.RequestId)
@@ -567,27 +570,21 @@ func Start(c AgentConfig) {
 				var err error
 				httpResponse, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
 				if err != nil {
-					s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
+					s.handleErr(processChPayload.requestPacket.RequestId, err)
 					return
 				}
 				defer httpResponse.Body.Close()
 
-				responseSize, err := getResponseSize(httpResponse)
-				if err != nil {
-					s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
-					return
-				}
-				s.logger.Debug("Response size: " + fmt.Sprintf("%d", responseSize))
-				if s.commonConfig.Networking.LargeDataPolicy == "split" && int(responseSize) > s.commonConfig.Split.ChunkBytes {
+				if s.commonConfig.Networking.LargeDataPolicy == "split" {
 					err = s.sendSplitData(processChPayload.requestPacket.RequestId, httpResponse)
 					if err != nil {
-						s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
+						s.handleErr(processChPayload.requestPacket.RequestId, err)
 						return
 					}
 				} else {
 					err = s.sendUnsplitData(processChPayload.requestPacket.RequestId, httpResponse)
 					if err != nil {
-						s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
+						s.handleErr(processChPayload.requestPacket.RequestId, err)
 						return
 					}
 				}

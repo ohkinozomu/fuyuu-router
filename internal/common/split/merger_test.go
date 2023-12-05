@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ohkinozomu/fuyuu-router/pkg/data"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewMerger(t *testing.T) {
@@ -22,14 +23,12 @@ func TestAddChunkAndIsComplete(t *testing.T) {
 	chunk := &data.HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  1,
-		Total:     2,
+		IsLast:    false,
 		Data:      []byte("part1"),
 	}
 
 	merger.AddChunk(chunk)
-	if !reflect.DeepEqual(merger.chunks[chunk.RequestId][int(chunk.Sequence)], chunk.Data) {
-		t.Errorf("AddChunk did not add the chunk data correctly")
-	}
+	assert.Equal(t, merger.chunks[chunk.RequestId].data[int(chunk.Sequence)], chunk.Data)
 
 	if merger.IsComplete(chunk) {
 		t.Error("IsComplete should return false when the total number of chunks has not been reached")
@@ -38,13 +37,19 @@ func TestAddChunkAndIsComplete(t *testing.T) {
 	chunk2 := &data.HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  2,
-		Total:     2,
+		IsLast:    true,
 		Data:      []byte("part2"),
 	}
 
 	merger.AddChunk(chunk2)
+	assert.Equal(t, merger.chunks[chunk2.RequestId].data[int(chunk2.Sequence)], chunk2.Data)
+
 	if !merger.IsComplete(chunk2) {
 		t.Error("IsComplete should return true when all chunks have been added")
+	}
+
+	if merger.chunks[chunk2.RequestId].total != int(chunk2.Sequence) {
+		t.Errorf("total was not set correctly when IsLast is true")
 	}
 }
 
@@ -53,13 +58,13 @@ func TestGetCombinedData(t *testing.T) {
 	chunk1 := &data.HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  1,
-		Total:     2,
+		IsLast:    false,
 		Data:      []byte("part1"),
 	}
 	chunk2 := &data.HTTPBodyChunk{
 		RequestId: "test",
 		Sequence:  2,
-		Total:     2,
+		IsLast:    true,
 		Data:      []byte("part2"),
 	}
 

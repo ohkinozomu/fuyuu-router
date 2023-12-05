@@ -252,14 +252,14 @@ func newServer(c AgentConfig) server {
 	}
 }
 
-func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) ([]byte, int, http.Header, error) {
-	var responseHeader http.Header
+func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (*http.Response, error) {
+	var response *http.Response
 
 	url := "http://" + proxyHost + data.Path
 	body := bytes.NewBuffer(data.Body.Body)
 	req, err := http.NewRequest(data.Method, url, body)
 	if err != nil {
-		return nil, http.StatusInternalServerError, responseHeader, err
+		return nil, err
 	}
 	for key, values := range data.Headers.GetHeaders() {
 		for _, value := range values.GetValues() {
@@ -267,17 +267,11 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) ([]byte, int
 		}
 	}
 	client := &http.Client{}
-	resp, err := client.Do(req)
+	response, err = client.Do(req)
 	if err != nil {
-		return nil, http.StatusInternalServerError, responseHeader, err
+		return response, err
 	}
-	defer resp.Body.Close()
-	responseBody := new(bytes.Buffer)
-	_, err = responseBody.ReadFrom(resp.Body)
-	if err != nil {
-		return nil, resp.StatusCode, responseHeader, err
-	}
-	return responseBody.Bytes(), resp.StatusCode, resp.Header, nil
+	return response, nil
 }
 
 func (s *server) sendSplitData(requestID string, httpResponse []byte, statusCode int, responseHeader http.Header) error {
@@ -379,6 +373,25 @@ func (s *server) sendUnsplitData(requestID string, httpResponse []byte, statusCo
 		return err
 	}
 	return nil
+}
+
+func (s *server) handleErr(requestID string, header http.Header, err error) {
+	s.logger.Error("Error sending HTTP request", zap.Error(err))
+	protoHeaders := data.HTTPHeaderToProtoHeaders(header)
+	// For now, not apply the storage relay to the error
+	responseData := data.HTTPResponseData{
+		Body: &data.HTTPBody{
+			Body: []byte(err.Error()),
+			Type: "data",
+		},
+		StatusCode: http.StatusInternalServerError,
+		Headers:    &protoHeaders,
+	}
+	err = s.sendResponseData(&responseData, requestID)
+	if err != nil {
+		s.logger.Error("Error sending response data", zap.Error(err))
+		return
+	}
 }
 
 func Start(c AgentConfig) {
@@ -499,37 +512,33 @@ func Start(c AgentConfig) {
 				}
 
 				var err error
-				httpResponse, statusCode, responseHeader, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
+				httpResponse, err := sendHTTP1Request(s.proxyHost, processChPayload.httpRequestData)
 				if err != nil {
-					s.logger.Error("Error sending HTTP request", zap.Error(err))
-					protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
-					// For now, not apply the storage relay to the error
-					responseData := data.HTTPResponseData{
-						Body: &data.HTTPBody{
-							Body: []byte(err.Error()),
-							Type: "data",
-						},
-						StatusCode: http.StatusInternalServerError,
-						Headers:    &protoHeaders,
-					}
-					err := s.sendResponseData(&responseData, processChPayload.requestPacket.RequestId)
+					s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
+					return
+				}
+				defer httpResponse.Body.Close()
+				responseBody := new(bytes.Buffer)
+				_, err = responseBody.ReadFrom(httpResponse.Body)
+				if err != nil {
+					s.logger.Error("Error reading response body", zap.Error(err))
+					return
+				}
+				if err != nil {
+					s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
+					return
+				}
+				if s.commonConfig.Networking.LargeDataPolicy == "split" && len(responseBody.Bytes()) > s.commonConfig.Split.ChunkBytes {
+					err = s.sendSplitData(processChPayload.requestPacket.RequestId, responseBody.Bytes(), httpResponse.StatusCode, httpResponse.Header)
 					if err != nil {
-						s.logger.Error("Error sending response data", zap.Error(err))
+						s.logger.Error("Error sending split data", zap.Error(err))
 						return
 					}
 				} else {
-					if s.commonConfig.Networking.LargeDataPolicy == "split" && len(httpResponse) > s.commonConfig.Split.ChunkBytes {
-						err = s.sendSplitData(processChPayload.requestPacket.RequestId, httpResponse, statusCode, responseHeader)
-						if err != nil {
-							s.logger.Error("Error sending split data", zap.Error(err))
-							return
-						}
-					} else {
-						err = s.sendUnsplitData(processChPayload.requestPacket.RequestId, httpResponse, statusCode, responseHeader)
-						if err != nil {
-							s.logger.Error("Error sending unsplit data", zap.Error(err))
-							return
-						}
+					err = s.sendUnsplitData(processChPayload.requestPacket.RequestId, responseBody.Bytes(), httpResponse.StatusCode, httpResponse.Header)
+					if err != nil {
+						s.logger.Error("Error sending unsplit data", zap.Error(err))
+						return
 					}
 				}
 			}()

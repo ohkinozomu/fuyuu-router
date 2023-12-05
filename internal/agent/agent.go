@@ -572,7 +572,13 @@ func Start(c AgentConfig) {
 				}
 				defer httpResponse.Body.Close()
 
-				if s.commonConfig.Networking.LargeDataPolicy == "split" && int(httpResponse.ContentLength) > s.commonConfig.Split.ChunkBytes {
+				responseSize, err := getResponseSize(httpResponse)
+				if err != nil {
+					s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
+					return
+				}
+				s.logger.Debug("Response size: " + fmt.Sprintf("%d", responseSize))
+				if s.commonConfig.Networking.LargeDataPolicy == "split" && int(responseSize) > s.commonConfig.Split.ChunkBytes {
 					err = s.sendSplitData(processChPayload.requestPacket.RequestId, httpResponse)
 					if err != nil {
 						s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)

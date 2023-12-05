@@ -274,16 +274,22 @@ func sendHTTP1Request(proxyHost string, data *data.HTTPRequestData) (*http.Respo
 	return response, nil
 }
 
-func (s *server) sendSplitData(requestID string, httpResponse []byte, statusCode int, responseHeader http.Header) error {
+func (s *server) sendSplitData(requestID string, httpResponse *http.Response) error {
+	responseBody := new(bytes.Buffer)
+	_, err := responseBody.ReadFrom(httpResponse.Body)
+	if err != nil {
+		return err
+	}
+
 	callbackFn := func(sequence int, b []byte) error {
 		body := data.HTTPBody{
 			Body: b,
 			Type: "split",
 		}
-		protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
+		protoHeaders := data.HTTPHeaderToProtoHeaders(httpResponse.Header)
 		responseData := data.HTTPResponseData{
 			Body:       &body,
-			StatusCode: int32(statusCode),
+			StatusCode: int32(httpResponse.StatusCode),
 			Headers:    &protoHeaders,
 		}
 
@@ -295,7 +301,7 @@ func (s *server) sendSplitData(requestID string, httpResponse []byte, statusCode
 		return nil
 	}
 
-	err := split.Split(requestID, httpResponse, s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, callbackFn)
+	err = split.Split(requestID, responseBody.Bytes(), s.commonConfig.Split.ChunkBytes, s.commonConfig.Networking.Format, callbackFn)
 	if err != nil {
 		return err
 	}
@@ -337,19 +343,25 @@ func (s *server) sendResponseData(responseData *data.HTTPResponseData, requestID
 	return nil
 }
 
-func (s *server) sendUnsplitData(requestID string, httpResponse []byte, statusCode int, responseHeader http.Header) error {
+func (s *server) sendUnsplitData(requestID string, httpResponse *http.Response) error {
+	responseBody := new(bytes.Buffer)
+	_, err := responseBody.ReadFrom(httpResponse.Body)
+	if err != nil {
+		return err
+	}
+
 	var objectName string
-	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && int(httpResponse.ContentLength) > s.commonConfig.StorageRelay.ThresholdBytes {
 		objectName = common.ResponseObjectName(s.id, requestID)
-		err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(httpResponse))
+		err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(responseBody.Bytes()))
 		if err != nil {
 			return err
 		}
 	}
-	protoHeaders := data.HTTPHeaderToProtoHeaders(responseHeader)
+	protoHeaders := data.HTTPHeaderToProtoHeaders(httpResponse.Header)
 
 	var body data.HTTPBody
-	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(httpResponse) > s.commonConfig.StorageRelay.ThresholdBytes {
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && int(httpResponse.ContentLength) > s.commonConfig.StorageRelay.ThresholdBytes {
 		s.logger.Debug("Using storage relay")
 		s.logger.Debug("Object name: " + objectName)
 		body = data.HTTPBody{
@@ -358,17 +370,17 @@ func (s *server) sendUnsplitData(requestID string, httpResponse []byte, statusCo
 		}
 	} else {
 		body = data.HTTPBody{
-			Body: []byte(httpResponse),
+			Body: []byte(responseBody.Bytes()),
 			Type: "data",
 		}
 	}
 
 	responseData := data.HTTPResponseData{
 		Body:       &body,
-		StatusCode: int32(statusCode),
+		StatusCode: int32(httpResponse.StatusCode),
 		Headers:    &protoHeaders,
 	}
-	err := s.sendResponseData(&responseData, requestID)
+	err = s.sendResponseData(&responseData, requestID)
 	if err != nil {
 		return err
 	}
@@ -518,26 +530,17 @@ func Start(c AgentConfig) {
 					return
 				}
 				defer httpResponse.Body.Close()
-				responseBody := new(bytes.Buffer)
-				_, err = responseBody.ReadFrom(httpResponse.Body)
-				if err != nil {
-					s.logger.Error("Error reading response body", zap.Error(err))
-					return
-				}
-				if err != nil {
-					s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
-					return
-				}
-				if s.commonConfig.Networking.LargeDataPolicy == "split" && len(responseBody.Bytes()) > s.commonConfig.Split.ChunkBytes {
-					err = s.sendSplitData(processChPayload.requestPacket.RequestId, responseBody.Bytes(), httpResponse.StatusCode, httpResponse.Header)
+
+				if s.commonConfig.Networking.LargeDataPolicy == "split" && int(httpResponse.ContentLength) > s.commonConfig.Split.ChunkBytes {
+					err = s.sendSplitData(processChPayload.requestPacket.RequestId, httpResponse)
 					if err != nil {
-						s.logger.Error("Error sending split data", zap.Error(err))
+						s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
 						return
 					}
 				} else {
-					err = s.sendUnsplitData(processChPayload.requestPacket.RequestId, responseBody.Bytes(), httpResponse.StatusCode, httpResponse.Header)
+					err = s.sendUnsplitData(processChPayload.requestPacket.RequestId, httpResponse)
 					if err != nil {
-						s.logger.Error("Error sending unsplit data", zap.Error(err))
+						s.handleErr(processChPayload.requestPacket.RequestId, httpResponse.Header, err)
 						return
 					}
 				}

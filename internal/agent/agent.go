@@ -388,6 +388,7 @@ func (s *server) sendResponseData(responseData *data.HTTPResponseData, requestID
 }
 
 func (s *server) sendUnsplitData(requestID string, httpResponse *http.Response) error {
+	s.logger.Debug("Reading response body")
 	responseBody := new(bytes.Buffer)
 	_, err := responseBody.ReadFrom(httpResponse.Body)
 	if err != nil {
@@ -397,6 +398,8 @@ func (s *server) sendUnsplitData(requestID string, httpResponse *http.Response) 
 	var objectName string
 	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && int(httpResponse.ContentLength) > s.commonConfig.StorageRelay.ThresholdBytes {
 		objectName = common.ResponseObjectName(s.id, requestID)
+		s.logger.Debug("Object name: " + objectName)
+		s.logger.Debug("Uploading object")
 		err := s.bucket.Upload(context.Background(), objectName, bytes.NewReader(responseBody.Bytes()))
 		if err != nil {
 			return err

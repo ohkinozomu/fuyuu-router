@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: fuyuu-router-agent
-        image: ohkinozomu/fuyuu-router:0.0.2
+        image: ohkinozomu/fuyuu-router:0.3.0
         volumeMounts:
         - name: fuyuu-router-agent-config
           mountPath: /app/config

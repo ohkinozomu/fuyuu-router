@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -252,28 +251,14 @@ func newServer(c HubConfig) server {
 	}
 }
 
-func getRequestSize(r *http.Request) (int32, error) {
-	if r.ContentLength > 0 {
-		return int32(r.ContentLength), nil
-	} else if r.TransferEncoding != nil && len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked" {
-		b, err := io.ReadAll(r.Body)
-		if err != nil {
-			return 0, err
-		}
-		return int32(len(b)), nil
-	} else {
-		return 0, fmt.Errorf("unknown request size")
-	}
-}
-
-func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks int32, sequence int, r *http.Request, uuid, agentID string) error {
+func (s *server) sendOnce(requestID string, isLast bool, sequence int32, previousData []byte, agentID string, r http.Request) error {
 	httpBodyChunk := data.HTTPBodyChunk{
-		RequestId: id,
-		Total:     totalChunks,
-		Sequence:  int32(sequence),
-		Data:      bytes,
+		RequestId: requestID,
+		IsLast:    isLast,
+		Sequence:  sequence,
+		Data:      previousData,
 	}
-	b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, format)
+	b, err := data.SerializeHTTPBodyChunk(&httpBodyChunk, s.commonConfig.Networking.Format)
 	if err != nil {
 		return err
 	}
@@ -299,7 +284,7 @@ func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks in
 	}
 
 	requestPacket := data.HTTPRequestPacket{
-		RequestId:       uuid,
+		RequestId:       requestID,
 		HttpRequestData: br,
 		Compress:        s.commonConfig.Networking.Compress,
 	}
@@ -311,6 +296,7 @@ func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks in
 	requestTopic := topics.RequestTopic(agentID)
 	_, err = s.client.Publish(context.Background(), &paho.Publish{
 		Payload: requestPayload,
+		QoS:     1,
 		Topic:   requestTopic,
 	})
 	if err != nil {
@@ -321,37 +307,57 @@ func (s *server) sendOnce(id string, bytes []byte, format string, totalChunks in
 
 func (s *server) sendSplitData(r *http.Request, uuid, agentID string) error {
 	buffer := make([]byte, s.commonConfig.Split.ChunkBytes)
-
-	total, err := getRequestSize(r)
-	if err != nil {
-		return err
-	}
-	s.logger.Debug("Total request size based on getRequestSize: " + fmt.Sprintf("%d", total))
-
-	totalChunks := int32(math.Ceil(float64(total) / float64(s.commonConfig.Split.ChunkBytes)))
-	s.logger.Debug("Total chunks: " + fmt.Sprintf("%d", totalChunks))
+	defer r.Body.Close()
 
 	sequence := 1
-	defer r.Body.Close()
+	isLast := false
+	previousData := []byte{}
+
 	for {
 		n, readErr := io.ReadFull(r.Body, buffer)
+
 		if n > 0 {
-			s.logger.Debug("Sending chunk " + fmt.Sprintf("%d", sequence))
-			s.logger.Debug("Chunk size: " + fmt.Sprintf("%d", n))
-			sendErr := s.sendOnce(uuid, buffer[:n], s.commonConfig.Networking.Format, totalChunks, sequence, r, uuid, agentID)
-			if sendErr != nil {
-				return sendErr
-			}
-			sequence++
+			s.logger.Debug(string(buffer[:n]))
+			previousData = make([]byte, n)
+			copy(previousData, buffer[:n])
 		}
 
 		if readErr != nil {
 			if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
-				s.logger.Debug("Finished sending chunks")
+				isLast = true
+				if len(previousData) > 0 {
+					s.logger.Debug("sequence: " + fmt.Sprintf("%d", sequence))
+					s.logger.Debug("isLast: " + fmt.Sprintf("%t", isLast))
+					s.logger.Debug("previousData: " + string(previousData))
+					err := s.sendOnce(uuid, isLast, int32(sequence), previousData, agentID, *r)
+					if err != nil {
+						return err
+					}
+				}
+				// The request is smaller than a chunk and only one packet is sent.
+				if len(previousData) == 0 {
+					err := s.sendOnce(uuid, isLast, int32(sequence), buffer[:n], agentID, *r)
+					if err != nil {
+						return err
+					}
+				}
 				break
+			} else {
+				s.logger.Error("Error reading request body", zap.Error(readErr))
+				return readErr
 			}
-			return readErr
+		} else {
+			if len(previousData) > 0 {
+				s.logger.Debug("sequence: " + fmt.Sprintf("%d", sequence))
+				s.logger.Debug("isLast: " + fmt.Sprintf("%t", isLast))
+				s.logger.Debug("previousData: " + string(previousData))
+				err := s.sendOnce(uuid, false, int32(sequence), previousData, agentID, *r)
+				if err != nil {
+					return err
+				}
+			}
 		}
+		sequence++
 	}
 
 	return nil

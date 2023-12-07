@@ -16,7 +16,7 @@ message HTTPBodyChunk {
     string request_id = 1;
     int32 sequence = 2;
     bytes data = 3;
-    int32 total = 4;
+    bool is_last = 4;
 }
 
 message HTTPBody {

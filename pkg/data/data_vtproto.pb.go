@@ -145,8 +145,13 @@ func (m *HTTPBodyChunk) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.Total != 0 {
-		i = encodeVarint(dAtA, i, uint64(m.Total))
+	if m.IsLast {
+		i--
+		if m.IsLast {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
 		i--
 		dAtA[i] = 0x20
 	}
@@ -637,8 +642,8 @@ func (m *HTTPBodyChunk) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + sov(uint64(l))
 	}
-	if m.Total != 0 {
-		n += 1 + sov(uint64(m.Total))
+	if m.IsLast {
+		n += 2
 	}
 	n += len(m.unknownFields)
 	return n
@@ -1182,9 +1187,9 @@ func (m *HTTPBodyChunk) UnmarshalVT(dAtA []byte) error {
 			iNdEx = postIndex
 		case 4:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Total", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field IsLast", wireType)
 			}
-			m.Total = 0
+			var v int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflow
@@ -1194,11 +1199,12 @@ func (m *HTTPBodyChunk) UnmarshalVT(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.Total |= int32(b&0x7F) << shift
+				v |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
+			m.IsLast = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skip(dAtA[iNdEx:])

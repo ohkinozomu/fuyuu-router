@@ -396,7 +396,7 @@ func (s *server) sendUnsplitData(requestID string, httpResponse *http.Response) 
 	}
 
 	var objectName string
-	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && int(httpResponse.ContentLength) > s.commonConfig.StorageRelay.ThresholdBytes {
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(responseBody.Bytes()) > s.commonConfig.StorageRelay.ThresholdBytes {
 		objectName = common.ResponseObjectName(s.id, requestID)
 		s.logger.Debug("Object name: " + objectName)
 		s.logger.Debug("Uploading object")
@@ -408,7 +408,7 @@ func (s *server) sendUnsplitData(requestID string, httpResponse *http.Response) 
 	protoHeaders := data.HTTPHeaderToProtoHeaders(httpResponse.Header)
 
 	var body data.HTTPBody
-	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && int(httpResponse.ContentLength) > s.commonConfig.StorageRelay.ThresholdBytes {
+	if s.commonConfig.Networking.LargeDataPolicy == "storage_relay" && len(responseBody.Bytes()) > s.commonConfig.StorageRelay.ThresholdBytes {
 		s.logger.Debug("Using storage relay")
 		s.logger.Debug("Object name: " + objectName)
 		body = data.HTTPBody{

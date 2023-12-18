@@ -12,7 +12,7 @@ require (
 	github.com/ohkinozomu/neutral-cp v0.1.4
 	github.com/prometheus/client_golang v1.17.0
 	github.com/spf13/cobra v1.8.0
-	github.com/spf13/viper v1.18.0
+	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.8.4
 	github.com/thanos-io/objstore v0.0.0-20231123170144-bffedaa58acb
 	go.opentelemetry.io/otel/exporters/prometheus v0.44.0

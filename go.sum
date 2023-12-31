@@ -286,6 +286,8 @@ github.com/tencentyun/cos-go-sdk-v5 v0.7.40 h1:W6vDGKCHe4wBACI1d2UgE6+50sJFhRWU4
 github.com/tencentyun/cos-go-sdk-v5 v0.7.40/go.mod h1:4dCEtLHGh8QPxHEkgq+nFaky7yZxQuYwgSJM87icDaw=
 github.com/thanos-io/objstore v0.0.0-20231123170144-bffedaa58acb h1:3s/a99MWpt5ZRrJeOS0aX30/4v1ePNcey02xLJc2TAg=
 github.com/thanos-io/objstore v0.0.0-20231123170144-bffedaa58acb/go.mod h1:RMvJQnpB4QQiYGg1gF8mnPJg6IkIPY28Buh8f6b+F0c=
+github.com/thanos-io/objstore v0.0.0-20231231041903-61cfed8cbb9d h1:rTz1FIWYPS4R7H/hdZPaVRfevHdfv7BOjJ2FQG747KQ=
+github.com/thanos-io/objstore v0.0.0-20231231041903-61cfed8cbb9d/go.mod h1:RMvJQnpB4QQiYGg1gF8mnPJg6IkIPY28Buh8f6b+F0c=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=

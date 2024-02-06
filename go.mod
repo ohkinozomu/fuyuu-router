@@ -1,6 +1,6 @@
 module github.com/ohkinozomu/fuyuu-router
 
-go 1.21.1
+go 1.22.0
 
 require (
 	github.com/eclipse/paho.golang v0.12.1-0.20231123225550-a6def521ee1a

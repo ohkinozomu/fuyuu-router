@@ -10,7 +10,7 @@ require (
 	github.com/klauspost/compress v1.17.4
 	github.com/mustafaturan/bus/v3 v3.0.3
 	github.com/ohkinozomu/neutral-cp v0.1.4
-	github.com/prometheus/client_golang v1.17.0
+	github.com/prometheus/client_golang v1.22.0
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.0
 	github.com/stretchr/testify v1.8.4
